@@ -1,0 +1,18 @@
+# Code files (tracked in main branch)
+projector_display/
+config/
+examples/
+MocapUtility/
+pyproject.toml
+README.md
+
+# Reference symlink
+_reference
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# OS
+.DS_Store
