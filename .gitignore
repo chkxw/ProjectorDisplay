@@ -1,7 +1,12 @@
 # BMAD scaffold (tracked in separate bmad branch via worktree)
-_bmad/
-_bmad-output/
+_bmad
+_bmad-output
 _bmad-worktree/
+
+# AI assistant configs (tracked in bmad branch via worktree)
+.claude
+.codex
+.gemini
 
 # Reference code (symlink to external repo)
 _reference
