@@ -45,7 +45,7 @@ from projector_display.mocap import MocapTracker
 DEFAULT_SOCKET_PORT = 9999
 DEFAULT_SOCKET_HOST = "0.0.0.0"
 DEFAULT_UPDATE_RATE = 30  # Hz
-DEFAULT_BACKGROUND_COLOR = (50, 50, 50)
+DEFAULT_BACKGROUND_COLOR = (0, 0, 0)  # Black
 
 
 class ProjectorDisplayServer:
