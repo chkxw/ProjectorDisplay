@@ -172,8 +172,14 @@ fields:
     local_points: [[0,0], [2,0], [2,1], [0,1]]  # BL, BR, TR, TL (experiment coords)
 rigidbodies:
   robot1:
-    style: {shape: circle, size: 0.1, color: [255,0,0]}
-    trajectory: {enabled: true, mode: time, length: 5.0}  # or mode: distance, length: 1.0
+    style: {shape: circle, size: 0.1, color: [255, 0, 0, 200]}  # RGBA (semi-transparent red)
+    trajectory:
+      enabled: true
+      mode: time
+      length: 5.0
+      color: gradient
+      gradient_start: [255, 0, 0, 255]  # Opaque at current position
+      gradient_end: [255, 0, 0, 0]      # Fade to transparent
 ```
 Conversion: `yaml.safe_load()` → iterate → generate commands. Inverse: `scene.to_dict()` → `yaml.dump()`.
 
@@ -185,13 +191,13 @@ class Renderer(Protocol):
     def init(self, screen_index: int = 0) -> None: ...  # Always fullscreen
     def get_size(self) -> Tuple[int, int]: ...
     def clear(self, color: Tuple[int, int, int]) -> None: ...
-    def draw_circle(self, center: Tuple[int, int], radius: int, color: Tuple[int, int, int]) -> None: ...
-    def draw_polygon(self, points: List[Tuple[int, int]], color: Tuple[int, int, int]) -> None: ...
-    def draw_line(self, start: Tuple[int, int], end: Tuple[int, int], color: Tuple[int, int, int], width: int) -> None: ...
+    def draw_circle(self, center: Tuple[int, int], radius: int, color: Tuple[int, int, int, int]) -> None: ...  # RGBA
+    def draw_polygon(self, points: List[Tuple[int, int]], color: Tuple[int, int, int, int]) -> None: ...  # RGBA
+    def draw_line(self, start: Tuple[int, int], end: Tuple[int, int], color: Tuple[int, int, int, int], width: int) -> None: ...  # RGBA
     def flip(self) -> None: ...
 
 class PygameRenderer(Renderer):
-    """Default renderer using pygame. Always fullscreen."""
+    """Default renderer using pygame. Always fullscreen. Uses pygame.Surface with SRCALPHA for transparency."""
     ...
 ```
 
@@ -232,7 +238,32 @@ class RigidBody:
 - Style requires orientation (arrow, rotated shapes): use `get_effective_orientation()`
 - Style doesn't require orientation (circle without arrow): ignore orientation
 
-#### ADR-8: Command Submodule Architecture
+#### ADR-8: RGBA Color Format
+**Decision:** All colors use RGBA tuple (4 values). RGB (3 values) accepted and auto-converted to RGBA with alpha=255.
+**Rationale:** Unifying alpha into the color tuple is more intuitive (standard in graphics APIs) and enables transparency gradients in trajectories.
+
+**Color format:**
+- `[R, G, B]` → auto-converted to `[R, G, B, 255]` (fully opaque)
+- `[R, G, B, A]` → used directly (A: 0=transparent, 255=opaque)
+
+**Affected fields:**
+- `RigidBodyStyle.color` - shape fill color with transparency
+- `RigidBodyStyle.orientation_color` - orientation arrow color
+- `TrajectoryStyle.color` - solid color mode (when not "gradient")
+- `TrajectoryStyle.gradient_start` - gradient from (supports alpha fade)
+- `TrajectoryStyle.gradient_end` - gradient to (supports alpha fade)
+
+**Example - fade-out trajectory:**
+```yaml
+trajectory:
+  color: gradient
+  gradient_start: [255, 0, 0, 255]   # Opaque red at current position
+  gradient_end: [255, 0, 0, 0]       # Fully transparent at trail end
+```
+
+**Removed:** Separate `alpha` field from `RigidBodyStyle` (merged into `color[3]`)
+
+#### ADR-9: Command Submodule Architecture
 **Decision:** Commands as extensible submodule with layered structure
 **Rationale:** Core commands for researchers (intuitive, fast). Future pygame-level commands separate. User custom commands easy to add.
 ```
@@ -391,8 +422,11 @@ ProjectorDisplay/
 
 - [ ] **Task 2.2:** Implement RigidBody and styles
   - File: `projector_display/core/rigidbody.py`
-  - Action: Create `RigidBody` dataclass with position, optional orientation, fallback logic. Create `RigidBodyStyle` (shape, size, color, etc.) and `TrajectoryStyle` dataclasses
+  - Action: Create `RigidBody` dataclass with position, optional orientation, fallback logic. Create `RigidBodyStyle` and `TrajectoryStyle` dataclasses
   - Notes: Reference `_reference/display_toolbox.py` for style fields
+  - **Color format (ADR-8):** All colors are RGBA tuples. RGB input auto-converts to RGBA with alpha=255.
+    - `RigidBodyStyle.color`: RGBA for shape fill (no separate alpha field)
+    - `TrajectoryStyle.gradient_start/end`: RGBA for opacity fade support
   - **Trajectory modes:**
     - `mode: time, length: 5.0` = show all positions from last 5 seconds
     - `mode: distance, length: 1.0` = show trajectory of fixed 1 meter length
