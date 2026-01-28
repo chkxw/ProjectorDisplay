@@ -21,6 +21,9 @@ ColorInput = Union[str, List, Tuple]
 # Regex for hex color codes
 HEX_COLOR_PATTERN = re.compile(r'^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$')
 
+# Regex for comma-separated values like "50,50,50" or "(50, 50, 50)" or "[50,50,50]" or "0.5, 0.5, 0.5"
+CSV_COLOR_PATTERN = re.compile(r'^[\(\[]?\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*([0-9.]+))?\s*[\)\]]?$')
+
 
 def normalize_color(color: Tuple[Union[int, float], ...]) -> Color:
     """
@@ -108,12 +111,39 @@ def parse_hex_color(hex_str: str) -> Optional[Color]:
         return (r, g, b, a)
 
 
+def parse_csv_color(csv_str: str) -> Optional[Color]:
+    """
+    Parse comma-separated color string to RGBA tuple.
+
+    Args:
+        csv_str: Color string like "50,50,50" or "(50, 50, 50)" or "0.5,0.5,0.5"
+
+    Returns:
+        RGBA tuple or None if invalid format.
+    """
+    match = CSV_COLOR_PATTERN.match(csv_str.strip())
+    if not match:
+        return None
+
+    try:
+        values = [match.group(i) for i in range(1, 5) if match.group(i) is not None]
+        # Detect if float format (contains '.')
+        if any('.' in v for v in values):
+            parsed = tuple(float(v) for v in values)
+        else:
+            parsed = tuple(int(v) for v in values)
+        return normalize_color(parsed)
+    except (ValueError, TypeError):
+        return None
+
+
 def parse_color(color: ColorInput) -> Color:
     """
     Parse color from various formats to RGBA tuple.
 
     Supported formats:
     - HEX string: "#RRGGBB", "#RRGGBBAA", "RRGGBB", "RRGGBBAA"
+    - CSV string: "R,G,B", "(R,G,B)", "R,G,B,A", "(R, G, B, A)"
     - RGB list/tuple: [R, G, B] with 0-255 values
     - RGBA list/tuple: [R, G, B, A] with 0-255 values
     - RGB float list/tuple: [R, G, B] with 0.0-1.0 values (all must be floats)
@@ -131,6 +161,10 @@ def parse_color(color: ColorInput) -> Color:
     Examples:
         >>> parse_color("#FF0000")
         (255, 0, 0, 255)
+        >>> parse_color("50,50,50")
+        (50, 50, 50, 255)
+        >>> parse_color("(255, 128, 0)")
+        (255, 128, 0, 255)
         >>> parse_color([255, 128, 0])
         (255, 128, 0, 255)
         >>> parse_color([1.0, 0.5, 0.0])
@@ -138,12 +172,19 @@ def parse_color(color: ColorInput) -> Color:
         >>> parse_color((0, 255, 0, 128))
         (0, 255, 0, 128)
     """
-    # Handle string (hex color)
+    # Handle string
     if isinstance(color, str):
+        # Try hex first
         result = parse_hex_color(color)
-        if result is None:
-            raise ValueError(f"Invalid hex color format: {color}")
-        return result
+        if result is not None:
+            return result
+
+        # Try CSV format
+        result = parse_csv_color(color)
+        if result is not None:
+            return result
+
+        raise ValueError(f"Invalid color format: {color}")
 
     # Handle list/tuple
     if isinstance(color, (list, tuple)):

@@ -91,11 +91,11 @@ def configure_grid_layer(scene,
     Args:
         scene: Scene instance
         show_minor: Whether to show minor (0.1m) grid lines
-        major_color: Color for major grid lines (hex, RGB, RGBA, or float)
-        minor_color: Color for minor grid lines (hex, RGB, RGBA, or float)
+        major_color: Color for major grid lines (hex, RGB, RGBA, CSV, or float)
+        minor_color: Color for minor grid lines (hex, RGB, RGBA, CSV, or float)
 
     Returns:
-        Response with current settings
+        Response with current settings or error
     """
     if show_minor is not None:
         scene.grid_show_minor = bool(show_minor)
@@ -103,14 +103,14 @@ def configure_grid_layer(scene,
     if major_color is not None:
         try:
             scene.grid_major_color = parse_color(major_color)[:3]  # RGB only for grid
-        except ValueError:
-            pass
+        except ValueError as e:
+            return {"status": "error", "message": f"Invalid major_color: {e}"}
 
     if minor_color is not None:
         try:
             scene.grid_minor_color = parse_color(minor_color)[:3]  # RGB only for grid
-        except ValueError:
-            pass
+        except ValueError as e:
+            return {"status": "error", "message": f"Invalid minor_color: {e}"}
 
     return {
         "status": "success",
