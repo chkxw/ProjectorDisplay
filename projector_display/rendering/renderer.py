@@ -18,9 +18,53 @@ def _get_sdl_version() -> Tuple[int, int, int]:
     return pygame.get_sdl_version()
 
 
+def _get_display_position_xrandr(screen_index: int) -> Tuple[int, int]:
+    """
+    Get display position using xrandr (required dependency).
+
+    Args:
+        screen_index: Target display index
+
+    Returns:
+        (x, y) position of the display
+
+    Raises:
+        RuntimeError: If xrandr is not available or parsing fails
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(['xrandr', '--listmonitors'], capture_output=True, text=True)
+    except FileNotFoundError:
+        raise RuntimeError("xrandr not found. Please install xrandr (required dependency).")
+
+    if result.returncode != 0:
+        raise RuntimeError(f"xrandr failed: {result.stderr}")
+
+    lines = result.stdout.strip().split('\n')
+    for line in lines[1:]:  # Skip header "Monitors: N"
+        # Format: " 0: +*eDP 2560/345x1600/215+0+0  eDP"
+        # or: " 1: +HDMI-A-0 1920/1600x1080/900+352+1600  HDMI-A-0"
+        parts = line.split()
+        if parts and parts[0].rstrip(':') == str(screen_index):
+            # Parse geometry: WxH+X+Y (e.g., "1920/1600x1080/900+352+1600")
+            geom = parts[2]
+            plus_parts = geom.split('+')
+            if len(plus_parts) >= 3:
+                x = int(plus_parts[-2])
+                y = int(plus_parts[-1])
+                logger.info(f"Display {screen_index} position from xrandr: ({x}, {y})")
+                return (x, y)
+
+    raise RuntimeError(f"Display {screen_index} not found in xrandr output")
+
+
 def _init_display_sdl2(screen_index: int) -> pygame.Surface:
     """
     Initialize fullscreen display using SDL2 approach.
+
+    Uses borderless window (NOFRAME) instead of true FULLSCREEN
+    so the window stays visible when focus is lost.
 
     Args:
         screen_index: Target display index
@@ -38,11 +82,16 @@ def _init_display_sdl2(screen_index: int) -> pygame.Surface:
     target_width, target_height = desktop_sizes[screen_index]
     logger.info(f"Target display {screen_index}: {target_width}x{target_height}")
 
-    # Create fullscreen window on target display (SDL2 display parameter)
+    # Get display position from xrandr (required)
+    display_x, display_y = _get_display_position_xrandr(screen_index)
+
+    # Position window on target display
+    os.environ["SDL_VIDEO_WINDOW_POS"] = f"{display_x},{display_y}"
+
+    # Create borderless window (stays visible when unfocused, unlike FULLSCREEN)
     screen = pygame.display.set_mode(
         (target_width, target_height),
-        pygame.FULLSCREEN,
-        display=screen_index
+        pygame.NOFRAME
     )
     return screen
 
