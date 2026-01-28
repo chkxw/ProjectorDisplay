@@ -6,8 +6,60 @@ Isolates rendering behind Renderer interface for future flexibility
 """
 
 import os
+import logging
 from typing import Protocol, Tuple, List, Optional
 import pygame
+
+logger = logging.getLogger(__name__)
+
+
+def _get_sdl_version() -> Tuple[int, int, int]:
+    """Get SDL version tuple (major, minor, patch)."""
+    return pygame.get_sdl_version()
+
+
+def _init_display_sdl2(screen_index: int) -> pygame.Surface:
+    """
+    Initialize fullscreen display using SDL2 approach.
+
+    Args:
+        screen_index: Target display index
+
+    Returns:
+        pygame.Surface for the display
+    """
+    num_displays = pygame.display.get_num_displays()
+    if screen_index >= num_displays:
+        logger.warning(f"screen_index {screen_index} not available (have {num_displays}), using 0")
+        screen_index = 0
+
+    # Get target display size
+    desktop_sizes = pygame.display.get_desktop_sizes()
+    target_width, target_height = desktop_sizes[screen_index]
+    logger.info(f"Target display {screen_index}: {target_width}x{target_height}")
+
+    # Create fullscreen window on target display (SDL2 display parameter)
+    screen = pygame.display.set_mode(
+        (target_width, target_height),
+        pygame.FULLSCREEN,
+        display=screen_index
+    )
+    return screen
+
+
+def _init_display_sdl1(screen_index: int) -> pygame.Surface:
+    """
+    Initialize fullscreen display using SDL1.2 approach (env vars).
+
+    Args:
+        screen_index: Target display index
+
+    Returns:
+        pygame.Surface for the display
+    """
+    os.environ["SDL_VIDEO_FULLSCREEN_DISPLAY"] = str(screen_index)
+    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    return screen
 
 
 class Renderer(Protocol):
@@ -83,22 +135,29 @@ class PygameRenderer:
         Args:
             screen_index: Which display to use for multi-monitor setups
         """
-        # Set environment variables for display selection
         os.environ.setdefault("DISPLAY", ":0")
-        os.environ["SDL_VIDEODRIVER"] = os.getenv("SDL_VIDEO_DRIVER", "x11")
-        os.environ["SDL_VIDEO_FULLSCREEN_DISPLAY"] = str(screen_index)
-        os.environ.setdefault("SDL_VIDEO_WINDOW_POS", "0,0")
 
         pygame.init()
 
-        # Create fullscreen window
-        flags = pygame.FULLSCREEN
-        self.screen = pygame.display.set_mode((0, 0), flags)
+        # Detect SDL version and use appropriate approach
+        sdl_version = _get_sdl_version()
+        logger.info(f"SDL version {sdl_version[0]}.{sdl_version[1]}.{sdl_version[2]} detected")
+
+        if sdl_version[0] >= 2:
+            # SDL2: use display parameter
+            logger.info(f"Using SDL2 multi-display (screen_index={screen_index})")
+            self.screen = _init_display_sdl2(screen_index)
+        else:
+            # SDL1.2: use environment variable
+            logger.info(f"Using SDL1.2 env var (screen_index={screen_index})")
+            self.screen = _init_display_sdl1(screen_index)
+
         pygame.display.set_caption("Projector Display Server")
         pygame.mouse.set_visible(False)
 
         self.clock = pygame.time.Clock()
         self.width, self.height = pygame.display.get_surface().get_size()
+        logger.info(f"Display initialized: {self.width}x{self.height}")
 
     def get_size(self) -> Tuple[int, int]:
         """Get screen dimensions."""
