@@ -351,6 +351,28 @@ Modified files:
 3. **Per-RigidBody Control**: `auto_track` and `mocap_name` fields on RigidBody
 4. **Detailed Error Messages**: Returns specific error codes when MoCap unavailable
 
+### Adversarial Review (MoCap) - 2026-01-28
+
+15 findings identified, 11 fixed, 4 skipped:
+
+| ID | Severity | Fix Applied |
+|----|----------|-------------|
+| F1 | CRITICAL | `Lock()` → `RLock()` for reentrant locking |
+| F2 | HIGH | Added `scene.set_rigidbody_tracking()` for thread-safe mutations |
+| F3 | HIGH | Skipped - no IP validation (internal use) |
+| F4 | HIGH | Port validation (1-65535) |
+| F5 | MEDIUM | Check `is_alive()` before starting new thread |
+| F6 | MEDIUM | Pass `auto_track` in `Scene.from_dict()` |
+| F7 | MEDIUM | Rate-limit poll errors (ERROR once, then DEBUG) |
+| F8 | MEDIUM | Only set `enabled=True` after successful connect |
+| F9 | MEDIUM | Skipped - noise |
+| F10 | LOW | Skipped - noise |
+| F11 | LOW | `DEFAULT_NATNET_PORT` constant |
+| F12 | LOW | Log warning once per missing MoCap body |
+| F13 | LOW | Clean up `self._mocap` on connect failure |
+| F14 | LOW | Reuse MoCap validation helpers (DRY) |
+| F15 | LOW | Skipped - undecided |
+
 ---
 
 ## To Resume This Session
