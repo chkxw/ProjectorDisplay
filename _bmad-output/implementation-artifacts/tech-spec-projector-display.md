@@ -173,7 +173,7 @@ fields:
 rigidbodies:
   robot1:
     style: {shape: circle, size: 0.1, color: [255,0,0]}
-    trajectory: {enabled: true, mode: time, length: 5.0}
+    trajectory: {enabled: true, mode: time, length: 5.0}  # or mode: distance, length: 1.0
 ```
 Conversion: `yaml.safe_load()` → iterate → generate commands. Inverse: `scene.to_dict()` → `yaml.dump()`.
 
@@ -239,7 +239,7 @@ class RigidBody:
 commands/
 ├── __init__.py            # Registry + @register_command
 ├── base.py                # Base infrastructure
-├── core/                  # Researcher-friendly commands
+├── prebuilt/              # Researcher-friendly commands
 │   ├── rigidbody_commands.py
 │   ├── field_commands.py
 │   ├── scene_commands.py
@@ -259,7 +259,7 @@ def my_custom_display(scene, name: str, special_param: float):
     return {"status": "success"}
 ```
 
-**Auto-discovery:** Commands module auto-loads all `core/` commands on import. User commands registered via decorator.
+**Auto-discovery:** Commands module auto-loads all `prebuilt/` commands on import. User commands registered via decorator.
 
 ### Pre-mortem Prevention Measures
 
@@ -272,10 +272,13 @@ Two togglable overlay layers for on-demand debugging:
 
 Commands: `toggle_grid_layer`, `toggle_field_layer`
 
-#### Calibration File Integrity
-Calibration file must store complete context:
+#### Calibration File Integrity (REQUIRED)
+**The "screen" field is set via a cached calibration YAML file. This file is REQUIRED - if not present, server cannot start.**
+
+The cache file is immediately synced whenever user sets the 4-corner world↔screen coordinate relationship.
+
 ```yaml
-# calibration.yaml
+# calibration.yaml (cached, auto-synced)
 resolution:
   width: 1920
   height: 1080
@@ -285,13 +288,14 @@ screen_field:
 created: "2026-01-27T10:00:00"
 ```
 **Validation on load:** Reject if current resolution doesn't match stored resolution.
+**No calibration file:** Server refuses to start with clear error message.
 
 #### Vertex Order Validation
 On field registration, validate vertices form counter-clockwise polygon. Warn/reject if clockwise order detected.
 
 #### Error Handling Policy
-- **Malformed commands:** Never crash. Log error, return error response, continue running.
-- **Unhandled exceptions:** Let them crash the server. Do not attempt recovery.
+- **Malformed commands (bad JSON, missing params, invalid values):** Never crash. Log error, return informative error response (no strict schema, but must help user identify the problem), continue running.
+- **Unhandled exceptions (bugs in command handlers, system errors):** Let them crash the server. Do not attempt recovery. This makes bugs visible immediately.
 
 #### Orientation Safety
 - Configurable `probe_distance` (default 0.1m) for two-point orientation transform
@@ -331,7 +335,7 @@ ProjectorDisplay/
 │   ├── commands/                  # Command submodule
 │   │   ├── __init__.py            # Registry + @register_command
 │   │   ├── base.py                # Base command infrastructure
-│   │   ├── core/                  # Core commands (researcher-friendly)
+│   │   ├── prebuilt/              # Prebuilt commands (researcher-friendly)
 │   │   │   ├── __init__.py
 │   │   │   ├── rigidbody_commands.py
 │   │   │   ├── field_commands.py
@@ -389,6 +393,9 @@ ProjectorDisplay/
   - File: `projector_display/core/rigidbody.py`
   - Action: Create `RigidBody` dataclass with position, optional orientation, fallback logic. Create `RigidBodyStyle` (shape, size, color, etc.) and `TrajectoryStyle` dataclasses
   - Notes: Reference `_reference/display_toolbox.py` for style fields
+  - **Trajectory modes:**
+    - `mode: time, length: 5.0` = show all positions from last 5 seconds
+    - `mode: distance, length: 1.0` = show trajectory of fixed 1 meter length
 
 - [ ] **Task 2.3:** Implement Scene management
   - File: `projector_display/core/scene.py`
@@ -469,7 +476,7 @@ ProjectorDisplay/
 - [ ] **Task 8.1:** Implement dual-sink logging
   - File: `projector_display/utils/logging.py`
   - Action: Create logging setup function with stdout/stderr AND file output, configurable log levels, `--verbose` support
-  - Notes: Log to `/var/log/projector_display.log` if writable, else fallback
+  - Notes: Log to `/var/log/projector_display.log` if writable, else fallback to `/tmp/projector_display.log`
 
 - [ ] **Task 8.2:** Create default server config
   - File: `config/server_config.yaml`
@@ -481,6 +488,18 @@ ProjectorDisplay/
   - File: `examples/basic_usage.py`
   - Action: Demonstrate client connection, creating fields, creating rigid bodies, position updates
   - Notes: Should be runnable standalone
+
+#### Phase 10: Interactive Visual Testing
+- [ ] **Task 10.1:** Create interactive visual test suite
+  - File: `projector_display/tests/visual_tests.py`
+  - Action: Implement interactive test runner that displays visual behaviors and prompts user for verification
+  - Tests to include:
+    - All shape primitives (circle, box, triangle, polygon)
+    - Orientation arrows at various angles
+    - Trajectory rendering (time mode, distance mode, styles)
+    - Debug layers (grid, field boundaries)
+    - Coordinate transform verification (known positions)
+  - Notes: Run with `python -m projector_display.tests.visual_tests`
 
 ### Acceptance Criteria
 
@@ -523,10 +542,16 @@ ProjectorDisplay/
 
 ### Testing Strategy
 
-- **Unit tests:** Field transforms, orientation conversion, command parsing
-- **Integration tests:** Client-server communication, scene serialization
-- **Manual validation:** Visual verification against reference implementation
+- **Unit tests:** Field transforms, orientation conversion, command parsing (non-graphical)
+- **Interactive visual tests:** Since graphics require human verification, implement an interactive test suite that:
+  - Displays a specific visual behavior (e.g., "Circle at position (1,1) with arrow pointing right")
+  - Prompts user: "Does this look correct? [y/n]"
+  - Proceeds to next test on 'y', logs failure on 'n'
+  - Covers all primitives, trajectory styles, orientation transforms, debug layers
+- **Integration tests:** Client-server communication, scene serialization (non-graphical)
 - **Post-v1 validation:** Run against old experiment code to verify coverage
+
+**Interactive test runner:** `python -m projector_display.tests.visual_tests`
 
 ### Notes
 
