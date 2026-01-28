@@ -38,6 +38,7 @@ from projector_display.rendering.background import BackgroundRenderer
 from projector_display.commands import get_registry
 from projector_display.utils.logging import setup_logging, get_logger
 from projector_display.storage import init_storage_manager, get_storage_manager
+from projector_display.mocap import MocapTracker
 
 
 # Default configuration
@@ -101,6 +102,11 @@ class ProjectorDisplayServer:
 
         # Background renderer (ADR-10)
         self.background_renderer = BackgroundRenderer()
+
+        # MoCap tracker (optional integration)
+        self.mocap_tracker = MocapTracker(self.scene)
+        # Attach tracker to scene so commands can access it
+        self.scene._mocap_tracker = self.mocap_tracker
 
         # Cached transform values
         self._screen_width = 0
@@ -548,6 +554,10 @@ class ProjectorDisplayServer:
         # ADR-10: Clean up session temp directory
         if self.storage:
             self.storage.cleanup_session()
+
+        # Shutdown MoCap tracker
+        if self.mocap_tracker:
+            self.mocap_tracker.shutdown()
 
         self.logger.info("Shutdown complete")
 

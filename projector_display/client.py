@@ -178,7 +178,8 @@ class DisplayClient:
     # --- RigidBody Commands ---
 
     def create_rigidbody(self, name: str, style: dict = None,
-                         trajectory: dict = None, mocap_name: str = None) -> Optional[Dict]:
+                         trajectory: dict = None, mocap_name: str = None,
+                         auto_track: bool = False) -> Optional[Dict]:
         """
         Create a new rigid body.
 
@@ -187,6 +188,7 @@ class DisplayClient:
             style: Optional style configuration
             trajectory: Optional trajectory configuration
             mocap_name: Optional MoCap system name
+            auto_track: Enable auto-tracking from MoCap (requires MoCap enabled)
 
         Returns:
             Response dictionary
@@ -198,6 +200,8 @@ class DisplayClient:
             cmd["trajectory"] = trajectory
         if mocap_name:
             cmd["mocap_name"] = mocap_name
+        if auto_track:
+            cmd["auto_track"] = auto_track
         return self._send_command(cmd)
 
     def remove_rigidbody(self, name: str) -> Optional[Dict]:
@@ -548,6 +552,70 @@ class DisplayClient:
             Response with deletion result
         """
         return self._send_command({"action": "delete_saved_scene", "name": name})
+
+    # --- MoCap Commands ---
+
+    def set_mocap(self, ip: str, port: int = 1511,
+                  enabled: bool = True) -> Optional[Dict]:
+        """
+        Configure MoCap server connection.
+
+        Args:
+            ip: MoCap server IP address
+            port: NatNet port (default 1511)
+            enabled: Enable MoCap immediately (default True)
+
+        Returns:
+            Response with configuration result
+        """
+        return self._send_command({
+            "action": "set_mocap",
+            "ip": ip,
+            "port": port,
+            "enabled": enabled
+        })
+
+    def enable_mocap(self) -> Optional[Dict]:
+        """Enable MoCap integration (uses saved config)."""
+        return self._send_command({"action": "enable_mocap"})
+
+    def disable_mocap(self) -> Optional[Dict]:
+        """Disable MoCap integration (keeps config)."""
+        return self._send_command({"action": "disable_mocap"})
+
+    def get_mocap_status(self) -> Optional[Dict]:
+        """Get MoCap status information."""
+        return self._send_command({"action": "get_mocap_status"})
+
+    def get_mocap_bodies(self) -> Optional[Dict]:
+        """Get list of rigid bodies available in MoCap system."""
+        return self._send_command({"action": "get_mocap_bodies"})
+
+    def set_auto_track(self, name: str, mocap_name: str = None,
+                       enabled: bool = True) -> Optional[Dict]:
+        """
+        Configure auto-tracking for a rigidbody.
+
+        Args:
+            name: Rigidbody name
+            mocap_name: Name in MoCap system (optional, updates if provided)
+            enabled: Enable auto-tracking (default True)
+
+        Returns:
+            Response with result
+        """
+        cmd = {"action": "set_auto_track", "name": name, "enabled": enabled}
+        if mocap_name is not None:
+            cmd["mocap_name"] = mocap_name
+        return self._send_command(cmd)
+
+    def enable_tracking(self, name: str) -> Optional[Dict]:
+        """Enable auto-tracking for a rigidbody."""
+        return self._send_command({"action": "enable_tracking", "name": name})
+
+    def disable_tracking(self, name: str) -> Optional[Dict]:
+        """Disable auto-tracking for a rigidbody."""
+        return self._send_command({"action": "disable_tracking", "name": name})
 
     # --- Context Manager ---
 

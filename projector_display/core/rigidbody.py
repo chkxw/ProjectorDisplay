@@ -156,6 +156,7 @@ class RigidBody:
     orientation: Optional[float] = None  # Current orientation in radians
     _last_orientation: float = field(default=0.0, repr=False)  # Internal fallback for missing orientation
     mocap_name: Optional[str] = None  # Name in MoCap system (optional)
+    auto_track: bool = False  # Auto-update position from MoCap when enabled
     style: RigidBodyStyle = field(default_factory=RigidBodyStyle)
     trajectory_style: TrajectoryStyle = field(default_factory=TrajectoryStyle)
     # F7: Made configurable via set_history_maxlen() or at creation time
@@ -266,6 +267,7 @@ class RigidBody:
             'position': list(self.position) if self.position else None,
             'orientation': self.orientation,
             'mocap_name': self.mocap_name,
+            'auto_track': self.auto_track,
             'style': self.style.to_dict(),
             'trajectory': self.trajectory_style.to_dict(),
         }
@@ -276,6 +278,7 @@ class RigidBody:
         rb = cls(
             name=data['name'],
             mocap_name=data.get('mocap_name'),
+            auto_track=data.get('auto_track', False),
         )
         if data.get('position'):
             rb.position = tuple(data['position'])

@@ -11,7 +11,8 @@ from projector_display.commands.base import register_command
 
 @register_command
 def create_rigidbody(scene, name: str, style: dict = None,
-                     trajectory: dict = None, mocap_name: str = None) -> dict:
+                     trajectory: dict = None, mocap_name: str = None,
+                     auto_track: bool = False) -> dict:
     """
     Create a new rigid body for display.
 
@@ -21,13 +22,57 @@ def create_rigidbody(scene, name: str, style: dict = None,
         style: Optional style configuration dict
         trajectory: Optional trajectory configuration dict
         mocap_name: Optional name in MoCap system
+        auto_track: Enable auto-tracking from MoCap (default False)
 
     Returns:
         Response with status and created name
+
+    Note:
+        If auto_track=True, MoCap must be enabled and mocap_name must be provided.
     """
+    # If auto_track requested, validate MoCap is available
+    if auto_track:
+        tracker = getattr(scene, '_mocap_tracker', None)
+        if tracker is None:
+            return {
+                "status": "error",
+                "message": "Cannot enable auto_track: MoCap tracker not initialized.",
+                "code": "MOCAP_NOT_INITIALIZED",
+            }
+
+        if not tracker.is_available():
+            return {
+                "status": "error",
+                "message": "Cannot enable auto_track: MocapUtility not installed.",
+                "code": "MOCAP_NOT_INSTALLED",
+            }
+
+        if not tracker.is_enabled():
+            return {
+                "status": "error",
+                "message": "Cannot enable auto_track: MoCap not enabled. "
+                           "Call set_mocap() or enable_mocap() first, "
+                           "or create with auto_track=False.",
+                "code": "MOCAP_NOT_ENABLED",
+            }
+
+        if not mocap_name:
+            return {
+                "status": "error",
+                "message": "Cannot enable auto_track: mocap_name is required.",
+            }
+
     rb = scene.create_rigidbody(name, style=style, trajectory=trajectory,
                                  mocap_name=mocap_name)
-    return {"status": "success", "name": rb.name}
+    rb.auto_track = auto_track
+
+    result = {"status": "success", "name": rb.name}
+    if mocap_name:
+        result["mocap_name"] = mocap_name
+    if auto_track:
+        result["auto_track"] = True
+
+    return result
 
 
 @register_command
