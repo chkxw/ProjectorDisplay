@@ -19,11 +19,17 @@ files_to_modify: [
   "projector_display/commands/prebuilt/field_commands.py",
   "projector_display/commands/prebuilt/scene_commands.py",
   "projector_display/commands/prebuilt/debug_commands.py",
+  "projector_display/commands/prebuilt/asset_commands.py",
+  "projector_display/commands/prebuilt/mocap_commands.py",
   "projector_display/rendering/__init__.py",
   "projector_display/rendering/renderer.py",
   "projector_display/rendering/primitives.py",
   "projector_display/rendering/trajectory.py",
   "projector_display/rendering/debug_layers.py",
+  "projector_display/rendering/background.py",
+  "projector_display/mocap/__init__.py",
+  "projector_display/mocap/tracker.py",
+  "projector_display/storage.py",
   "projector_display/utils/__init__.py",
   "projector_display/utils/logging.py",
   "config/server_config.yaml",
@@ -452,9 +458,14 @@ ProjectorDisplay/
 │   │   │   ├── field_commands.py
 │   │   │   ├── scene_commands.py
 │   │   │   ├── debug_commands.py
-│   │   │   └── asset_commands.py  # Image upload/background (ADR-10)
+│   │   │   ├── asset_commands.py  # Image upload/background (ADR-10)
+│   │   │   └── mocap_commands.py  # MoCap integration (Task 6.2)
 │   │   └── pygame/                # Future: low-level pygame commands
 │   │       └── __init__.py
+│   │
+│   ├── mocap/                     # MoCap integration (Task 6.2)
+│   │   ├── __init__.py
+│   │   └── tracker.py             # MocapTracker, MocapConfig
 │   │
 │   ├── rendering/
 │   │   ├── __init__.py
@@ -577,10 +588,11 @@ ProjectorDisplay/
   - Action: Create main server with: config loading, socket listener (JSON/TCP), render loop, command dispatch, signal handling
   - Notes: Reference `_reference/toolbox_display_server.py` for architecture. Never crash on bad commands.
 
-- [ ] **Task 6.2:** Add MoCap integration (optional)
-  - File: `projector_display/server.py` (or separate module)
-  - Action: Lazy-load MocapUtility, non-blocking connect with 2s timeout, thread-safe position updates
-  - Notes: Only initialize if MoCap features are used
+- [x] **Task 6.2:** Add MoCap integration (optional)
+  - Files: `projector_display/mocap/tracker.py`, `projector_display/commands/prebuilt/mocap_commands.py`
+  - Action: Lazy-load MocapUtility, background polling at 30Hz, thread-safe position updates, per-rigidbody auto_track
+  - Commands: `set_mocap`, `enable_mocap`, `disable_mocap`, `get_mocap_status`, `get_mocap_bodies`, `set_auto_track`, `enable_tracking`, `disable_tracking`
+  - Notes: Implemented as separate mocap package with MocapTracker class
 
 #### Phase 7: Client Library
 - [ ] **Task 7.1:** Implement client library

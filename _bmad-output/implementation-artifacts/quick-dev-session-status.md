@@ -65,8 +65,10 @@ project_context: null  # No project-context.md exists
 - `projector_display/commands/pygame/` - not needed for v1
 
 ### Tasks NOT Implemented
-- Task 6.2: MoCap integration (optional, marked for future)
 - Task 10.1: Interactive visual test suite (requires display hardware)
+
+### Tasks Added Post-Initial-Implementation
+- Task 6.2: MoCap integration ✅ (implemented 2026-01-28)
 
 ---
 
@@ -306,11 +308,54 @@ Modified files:
 
 ---
 
+---
+
+## MoCap Integration (Task 6.2) - Added 2026-01-28
+
+### Files Created
+
+| File | Description |
+|------|-------------|
+| `projector_display/mocap/__init__.py` | Package exports MocapTracker, MocapConfig |
+| `projector_display/mocap/tracker.py` | MocapTracker class with background polling |
+| `projector_display/commands/prebuilt/mocap_commands.py` | 8 MoCap commands |
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `projector_display/core/rigidbody.py` | Added `auto_track`, `mocap_name` fields |
+| `projector_display/commands/prebuilt/rigidbody_commands.py` | `create_rigidbody` accepts `auto_track` param |
+| `projector_display/commands/prebuilt/__init__.py` | Import mocap_commands |
+| `projector_display/server.py` | Initialize MocapTracker, attach to scene |
+| `projector_display/client.py` | 8 MoCap client methods |
+
+### Commands Registered (8 new, 29 total)
+
+```python
+# MoCap commands
+'set_mocap',           # Configure MoCap server (ip, port, enabled)
+'enable_mocap',        # Enable MoCap integration
+'disable_mocap',       # Disable MoCap integration
+'get_mocap_status',    # Get comprehensive status
+'get_mocap_bodies',    # List available MoCap bodies
+'set_auto_track',      # Configure per-rigidbody tracking
+'enable_tracking',     # Enable tracking for rigidbody
+'disable_tracking',    # Disable tracking for rigidbody
+```
+
+### Design Decisions
+
+1. **Optional Integration**: MocapUtility lazy-loaded only when enabled
+2. **Background Polling**: 30Hz thread updates tracked rigidbody positions
+3. **Per-RigidBody Control**: `auto_track` and `mocap_name` fields on RigidBody
+4. **Detailed Error Messages**: Returns specific error codes when MoCap unavailable
+
+---
+
 ## To Resume This Session
 
 1. Read this status file
-2. Continue at **Step 6: Resolve Findings**
-3. Present resolution options to user
-4. Apply chosen fixes
-5. Update tech-spec with final status
-6. Present completion summary
+2. Workflow steps 1-6 complete
+3. MoCap integration (Task 6.2) complete
+4. Remaining: Task 10.1 (interactive visual tests)
