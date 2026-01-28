@@ -11,6 +11,8 @@ from collections import deque
 from enum import Enum
 import time
 
+from projector_display.utils.color import normalize_color
+
 
 class RigidBodyShape(Enum):
     """Available rigid body visualization shapes"""
@@ -25,23 +27,6 @@ class TrajectoryLineStyle(Enum):
     SOLID = "solid"
     DOTTED = "dotted"
     DASHED = "dashed"
-
-
-def _normalize_color(color: Tuple[int, ...]) -> Tuple[int, int, int, int]:
-    """
-    Normalize color to RGBA format with clamping (ADR-8).
-
-    Accepts RGB (3 values) or RGBA (4 values).
-    RGB is converted to RGBA with alpha=255 (fully opaque).
-    """
-    clamped = tuple(max(0, min(255, int(c))) for c in color)
-    if len(clamped) == 3:
-        return clamped + (255,)  # Add full opacity
-    elif len(clamped) >= 4:
-        return clamped[:4]
-    else:
-        # Fallback for invalid input
-        return (0, 0, 0, 255)
 
 
 @dataclass
@@ -80,11 +65,11 @@ class RigidBodyStyle:
         return cls(
             shape=shape,
             size=data.get('size', 0.1),
-            color=_normalize_color(tuple(data.get('color', [0, 0, 255]))),
+            color=normalize_color(tuple(data.get('color', [0, 0, 255]))),
             label=data.get('label', True),
             label_offset=tuple(data.get('label_offset', [0, -0.2])),
             orientation_length=data.get('orientation_length', 0.15),
-            orientation_color=_normalize_color(tuple(data.get('orientation_color', [255, 255, 255]))),
+            orientation_color=normalize_color(tuple(data.get('orientation_color', [255, 255, 255]))),
             orientation_thickness=data.get('orientation_thickness', 2),
             polygon_vertices=[tuple(v) for v in data['polygon_vertices']] if data.get('polygon_vertices') else None,
         )
@@ -124,7 +109,7 @@ class TrajectoryStyle:
         """Create from dictionary. Accepts RGB or RGBA (ADR-8)."""
         color = data.get('color', [100, 100, 255])
         if isinstance(color, list):
-            color = _normalize_color(tuple(color))
+            color = normalize_color(tuple(color))
         return cls(
             enabled=data.get('enabled', True),
             mode=data.get('mode', 'time'),
@@ -132,8 +117,8 @@ class TrajectoryStyle:
             style=data.get('style', 'solid'),
             thickness=data.get('thickness', 2),
             color=color,
-            gradient_start=_normalize_color(tuple(data.get('gradient_start', [0, 0, 255]))),
-            gradient_end=_normalize_color(tuple(data.get('gradient_end', [0, 255, 0]))),
+            gradient_start=normalize_color(tuple(data.get('gradient_start', [0, 0, 255]))),
+            gradient_end=normalize_color(tuple(data.get('gradient_end', [0, 255, 0]))),
             dot_spacing=data.get('dot_spacing', 0.05),
             dash_length=data.get('dash_length', 0.1),
         )

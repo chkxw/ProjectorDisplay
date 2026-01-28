@@ -355,6 +355,31 @@ class DisplayClient:
         """Set field layer visibility."""
         return self._send_command({"action": "set_field_layer", "enabled": enabled})
 
+    def configure_grid_layer(self,
+                             show_minor: bool = None,
+                             major_color: list = None,
+                             minor_color: list = None) -> Optional[Dict]:
+        """
+        Configure grid layer settings.
+
+        Args:
+            show_minor: Whether to show minor (0.1m) grid lines
+            major_color: RGB color for major grid lines [r, g, b]
+            minor_color: RGB color for minor grid lines [r, g, b]
+        """
+        cmd = {"action": "configure_grid_layer"}
+        if show_minor is not None:
+            cmd["show_minor"] = show_minor
+        if major_color is not None:
+            cmd["major_color"] = major_color
+        if minor_color is not None:
+            cmd["minor_color"] = minor_color
+        return self._send_command(cmd)
+
+    def get_grid_settings(self) -> Optional[Dict]:
+        """Get current grid layer settings."""
+        return self._send_command({"action": "get_grid_settings"})
+
     # --- Asset Commands (ADR-10) ---
 
     def check_image(self, name: str, file_hash: Optional[str] = None) -> Optional[Dict]:

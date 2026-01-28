@@ -34,6 +34,11 @@ class Scene:
         self.grid_layer_enabled: bool = False
         self.field_layer_enabled: bool = False
 
+        # Grid layer settings
+        self.grid_show_minor: bool = True
+        self.grid_major_color: tuple = (100, 100, 100)
+        self.grid_minor_color: tuple = (50, 50, 50)
+
     @property
     def rigidbodies(self) -> Dict[str, RigidBody]:
         """Access rigidbodies dict (for backwards compatibility)."""
@@ -163,15 +168,16 @@ class Scene:
 
             # Update individual style attributes
             # TODO (F3): Add whitelist validation for production use
-            from projector_display.core.rigidbody import RigidBodyShape, _normalize_color
+            from projector_display.core.rigidbody import RigidBodyShape
+            from projector_display.utils.color import parse_color
 
             for key, value in style_params.items():
                 if hasattr(rb.style, key):
                     if key == 'shape' and isinstance(value, str):
                         value = RigidBodyShape(value)
-                    elif key in ('color', 'orientation_color') and isinstance(value, list):
-                        # ADR-8: Normalize to RGBA
-                        value = _normalize_color(tuple(value))
+                    elif key in ('color', 'orientation_color') and isinstance(value, (list, str)):
+                        # ADR-8: Parse and normalize to RGBA (supports hex, RGB, RGBA, float)
+                        value = parse_color(value)
                     elif key == 'label_offset' and isinstance(value, list):
                         value = tuple(value)
                     elif key == 'polygon_vertices' and value is not None:
@@ -192,17 +198,16 @@ class Scene:
             if rb is None:
                 return False
 
-            from projector_display.core.rigidbody import _normalize_color
+            from projector_display.utils.color import parse_color
 
             # Update individual trajectory attributes
             for key, value in traj_params.items():
                 if hasattr(rb.trajectory_style, key):
-                    if key in ('gradient_start', 'gradient_end') and isinstance(value, list):
-                        # ADR-8: Normalize to RGBA
-                        value = _normalize_color(tuple(value))
-                    elif key == 'color' and isinstance(value, list):
-                        # ADR-8: Normalize to RGBA (color can also be "gradient" string)
-                        value = _normalize_color(tuple(value))
+                    if key in ('gradient_start', 'gradient_end', 'color') and isinstance(value, (list, str)):
+                        # ADR-8: Parse and normalize to RGBA (supports hex, RGB, RGBA, float)
+                        # Note: 'color' can also be the literal string "gradient"
+                        if not (key == 'color' and value == 'gradient'):
+                            value = parse_color(value)
                     setattr(rb.trajectory_style, key, value)
 
             return True

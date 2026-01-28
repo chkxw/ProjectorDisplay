@@ -434,6 +434,10 @@ class ProjectorDisplayServer:
 
         # Draw debug layers if enabled
         if self.scene.grid_layer_enabled and self._world_bounds:
+            # Apply scene settings to grid layer
+            self.grid_layer.show_minor = self.scene.grid_show_minor
+            self.grid_layer.major_color = self.scene.grid_major_color
+            self.grid_layer.minor_color = self.scene.grid_minor_color
             self.grid_layer.draw(self.renderer, self.world_to_screen, self._world_bounds)
 
         if self.scene.field_layer_enabled:
