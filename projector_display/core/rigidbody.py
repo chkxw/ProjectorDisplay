@@ -27,27 +27,33 @@ class TrajectoryLineStyle(Enum):
     DASHED = "dashed"
 
 
-def _clamp_color(color: Tuple[int, ...]) -> Tuple[int, ...]:
-    """F12: Clamp color values to valid 0-255 range."""
-    return tuple(max(0, min(255, c)) for c in color)
+def _normalize_color(color: Tuple[int, ...]) -> Tuple[int, int, int, int]:
+    """
+    Normalize color to RGBA format with clamping (ADR-8).
 
-
-def _clamp_alpha(alpha: int) -> int:
-    """F12: Clamp alpha value to valid 0-255 range."""
-    return max(0, min(255, alpha))
+    Accepts RGB (3 values) or RGBA (4 values).
+    RGB is converted to RGBA with alpha=255 (fully opaque).
+    """
+    clamped = tuple(max(0, min(255, int(c))) for c in color)
+    if len(clamped) == 3:
+        return clamped + (255,)  # Add full opacity
+    elif len(clamped) >= 4:
+        return clamped[:4]
+    else:
+        # Fallback for invalid input
+        return (0, 0, 0, 255)
 
 
 @dataclass
 class RigidBodyStyle:
-    """Configuration for rigid body visualization"""
+    """Configuration for rigid body visualization (ADR-8: RGBA colors)"""
     shape: RigidBodyShape = RigidBodyShape.CIRCLE
     size: float = 0.1  # Size in meters
-    color: Tuple[int, int, int] = (0, 0, 255)  # RGB
-    alpha: int = 255  # Transparency (0=fully transparent, 255=fully opaque)
+    color: Tuple[int, int, int, int] = (0, 0, 255, 255)  # RGBA (alpha in 4th component)
     label: bool = True
     label_offset: Tuple[float, float] = (0, -0.2)  # Offset in meters
     orientation_length: float = 0.15  # Length of orientation arrow in meters
-    orientation_color: Tuple[int, int, int] = (255, 255, 255)  # Arrow color (white by default)
+    orientation_color: Tuple[int, int, int, int] = (255, 255, 255, 255)  # Arrow color RGBA
     orientation_thickness: int = 2  # Arrow thickness in pixels
     polygon_vertices: Optional[List[Tuple[float, float]]] = None  # For POLYGON shape, relative to center
 
@@ -56,32 +62,29 @@ class RigidBodyStyle:
         return {
             'shape': self.shape.value,
             'size': self.size,
-            'color': list(self.color),
-            'alpha': self.alpha,
+            'color': list(self.color),  # RGBA
             'label': self.label,
             'label_offset': list(self.label_offset),
             'orientation_length': self.orientation_length,
-            'orientation_color': list(self.orientation_color),
+            'orientation_color': list(self.orientation_color),  # RGBA
             'orientation_thickness': self.orientation_thickness,
             'polygon_vertices': [list(v) for v in self.polygon_vertices] if self.polygon_vertices else None,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "RigidBodyStyle":
-        """Create from dictionary."""
+        """Create from dictionary. Accepts RGB or RGBA (ADR-8)."""
         shape = data.get('shape', 'circle')
         if isinstance(shape, str):
             shape = RigidBodyShape(shape)
-        # F12: Clamp color and alpha values to valid range
         return cls(
             shape=shape,
             size=data.get('size', 0.1),
-            color=_clamp_color(tuple(data.get('color', [0, 0, 255]))),
-            alpha=_clamp_alpha(data.get('alpha', 255)),
+            color=_normalize_color(tuple(data.get('color', [0, 0, 255]))),
             label=data.get('label', True),
             label_offset=tuple(data.get('label_offset', [0, -0.2])),
             orientation_length=data.get('orientation_length', 0.15),
-            orientation_color=_clamp_color(tuple(data.get('orientation_color', [255, 255, 255]))),
+            orientation_color=_normalize_color(tuple(data.get('orientation_color', [255, 255, 255]))),
             orientation_thickness=data.get('orientation_thickness', 2),
             polygon_vertices=[tuple(v) for v in data['polygon_vertices']] if data.get('polygon_vertices') else None,
         )
@@ -89,15 +92,15 @@ class RigidBodyStyle:
 
 @dataclass
 class TrajectoryStyle:
-    """Configuration for trajectory visualization"""
+    """Configuration for trajectory visualization (ADR-8: RGBA colors)"""
     enabled: bool = True
     mode: str = "time"  # "time" or "distance"
     length: float = 5.0  # Seconds or meters depending on mode
     style: str = "solid"  # "solid", "dotted", "dashed"
     thickness: int = 2  # Pixels
-    color: Union[Tuple[int, int, int], str] = (100, 100, 255)  # RGB or "gradient"
-    gradient_start: Tuple[int, int, int] = (0, 0, 255)  # Near rigid body
-    gradient_end: Tuple[int, int, int] = (0, 255, 0)  # At tail
+    color: Union[Tuple[int, int, int, int], str] = (100, 100, 255, 255)  # RGBA or "gradient"
+    gradient_start: Tuple[int, int, int, int] = (0, 0, 255, 255)  # Near rigid body (RGBA)
+    gradient_end: Tuple[int, int, int, int] = (0, 255, 0, 255)  # At tail (RGBA, can fade to transparent)
     dot_spacing: float = 0.05  # For dotted style, spacing in meters
     dash_length: float = 0.1  # For dashed style, dash length in meters
 
@@ -110,18 +113,18 @@ class TrajectoryStyle:
             'style': self.style,
             'thickness': self.thickness,
             'color': list(self.color) if isinstance(self.color, tuple) else self.color,
-            'gradient_start': list(self.gradient_start),
-            'gradient_end': list(self.gradient_end),
+            'gradient_start': list(self.gradient_start),  # RGBA
+            'gradient_end': list(self.gradient_end),  # RGBA
             'dot_spacing': self.dot_spacing,
             'dash_length': self.dash_length,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "TrajectoryStyle":
-        """Create from dictionary."""
+        """Create from dictionary. Accepts RGB or RGBA (ADR-8)."""
         color = data.get('color', [100, 100, 255])
         if isinstance(color, list):
-            color = _clamp_color(tuple(color))  # F12: Clamp color values
+            color = _normalize_color(tuple(color))
         return cls(
             enabled=data.get('enabled', True),
             mode=data.get('mode', 'time'),
@@ -129,8 +132,8 @@ class TrajectoryStyle:
             style=data.get('style', 'solid'),
             thickness=data.get('thickness', 2),
             color=color,
-            gradient_start=_clamp_color(tuple(data.get('gradient_start', [0, 0, 255]))),
-            gradient_end=_clamp_color(tuple(data.get('gradient_end', [0, 255, 0]))),
+            gradient_start=_normalize_color(tuple(data.get('gradient_start', [0, 0, 255]))),
+            gradient_end=_normalize_color(tuple(data.get('gradient_end', [0, 255, 0]))),
             dot_spacing=data.get('dot_spacing', 0.05),
             dash_length=data.get('dash_length', 0.1),
         )

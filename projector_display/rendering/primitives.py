@@ -5,19 +5,30 @@ All orientation rendering goes through transform_orientation() to ensure
 correct handling of coordinate transformations.
 
 Based on draw_robot() from box_push_deploy/shared/display_toolbox.py.
+
+ADR-8: All colors use RGBA format (4-tuple). RGB (3-tuple) is auto-converted.
 """
 
 import math
-from typing import Tuple, List, Optional, Callable
+from typing import Tuple, List, Optional, Callable, Union
 from projector_display.rendering.renderer import PygameRenderer
 from projector_display.core.rigidbody import RigidBody, RigidBodyShape
+
+# Type alias for RGBA color
+ColorRGBA = Tuple[int, int, int, int]
+
+
+def _ensure_rgba(color: Union[Tuple[int, ...], List[int]]) -> ColorRGBA:
+    """Ensure color is RGBA format. Convert RGB to RGBA with alpha=255."""
+    if len(color) == 3:
+        return (color[0], color[1], color[2], 255)
+    return (color[0], color[1], color[2], color[3])
 
 
 def draw_circle(renderer: PygameRenderer,
                 center: Tuple[int, int],
                 radius: int,
-                color: Tuple[int, int, int],
-                alpha: int = 255) -> None:
+                color: ColorRGBA) -> None:
     """
     Draw a circle shape.
 
@@ -25,25 +36,27 @@ def draw_circle(renderer: PygameRenderer,
         renderer: Renderer instance
         center: Screen coordinates (x, y)
         radius: Radius in pixels
-        color: RGB color tuple
-        alpha: Transparency (0-255)
+        color: RGBA color tuple
     """
+    color = _ensure_rgba(color)
+    alpha = color[3]
+    rgb = color[:3]
+
     if alpha < 255:
         # Use transparency
         points = _circle_to_polygon(center, radius, 32)
-        renderer.draw_polygon_alpha(points, color, alpha)
+        renderer.draw_polygon_alpha(points, rgb, alpha)
         renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
     else:
-        renderer.draw_circle(center, radius, color)
+        renderer.draw_circle(center, radius, rgb)
         renderer.draw_circle(center, radius, (0, 0, 0), 2)  # Border
 
 
 def draw_box(renderer: PygameRenderer,
              center: Tuple[int, int],
              size: int,
-             color: Tuple[int, int, int],
-             angle: Optional[float] = None,
-             alpha: int = 255) -> None:
+             color: ColorRGBA,
+             angle: Optional[float] = None) -> None:
     """
     Draw a box/square shape, optionally rotated.
 
@@ -51,10 +64,13 @@ def draw_box(renderer: PygameRenderer,
         renderer: Renderer instance
         center: Screen coordinates (x, y)
         size: Half-size in pixels (full box is 2*size x 2*size)
-        color: RGB color tuple
+        color: RGBA color tuple
         angle: Rotation angle in radians (screen coordinates). None = axis-aligned.
-        alpha: Transparency (0-255)
     """
+    color = _ensure_rgba(color)
+    alpha = color[3]
+    rgb = color[:3]
+
     if angle is not None:
         cos_a = math.cos(angle)
         sin_a = math.sin(angle)
@@ -83,19 +99,18 @@ def draw_box(renderer: PygameRenderer,
         ]
 
     if alpha < 255:
-        renderer.draw_polygon_alpha(points, color, alpha)
+        renderer.draw_polygon_alpha(points, rgb, alpha)
         renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
     else:
-        renderer.draw_polygon(points, color)
+        renderer.draw_polygon(points, rgb)
         renderer.draw_polygon(points, (0, 0, 0), 2)  # Border
 
 
 def draw_triangle(renderer: PygameRenderer,
                   center: Tuple[int, int],
                   size: int,
-                  color: Tuple[int, int, int],
-                  angle: Optional[float] = None,
-                  alpha: int = 255) -> None:
+                  color: ColorRGBA,
+                  angle: Optional[float] = None) -> None:
     """
     Draw a triangle shape pointing in the direction of angle.
 
@@ -103,10 +118,13 @@ def draw_triangle(renderer: PygameRenderer,
         renderer: Renderer instance
         center: Screen coordinates (x, y)
         size: Size in pixels
-        color: RGB color tuple
+        color: RGBA color tuple
         angle: Direction angle in radians (screen coordinates). None = pointing up.
-        alpha: Transparency (0-255)
     """
+    color = _ensure_rgba(color)
+    alpha = color[3]
+    rgb = color[:3]
+
     if angle is not None:
         cos_a = math.cos(angle)
         sin_a = math.sin(angle)
@@ -133,10 +151,10 @@ def draw_triangle(renderer: PygameRenderer,
         ]
 
     if alpha < 255:
-        renderer.draw_polygon_alpha(points, color, alpha)
+        renderer.draw_polygon_alpha(points, rgb, alpha)
         renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
     else:
-        renderer.draw_polygon(points, color)
+        renderer.draw_polygon(points, rgb)
         renderer.draw_polygon(points, (0, 0, 0), 2)  # Border
 
 
@@ -144,9 +162,8 @@ def draw_polygon(renderer: PygameRenderer,
                  center: Tuple[int, int],
                  vertices: List[Tuple[float, float]],
                  scale: float,
-                 color: Tuple[int, int, int],
-                 angle: Optional[float] = None,
-                 alpha: int = 255) -> None:
+                 color: ColorRGBA,
+                 angle: Optional[float] = None) -> None:
     """
     Draw a custom polygon shape.
 
@@ -155,10 +172,13 @@ def draw_polygon(renderer: PygameRenderer,
         center: Screen coordinates (x, y)
         vertices: List of (x, y) vertices relative to center (in normalized units)
         scale: Scale factor (pixels per unit)
-        color: RGB color tuple
+        color: RGBA color tuple
         angle: Rotation angle in radians. None = no rotation.
-        alpha: Transparency (0-255)
     """
+    color = _ensure_rgba(color)
+    alpha = color[3]
+    rgb = color[:3]
+
     if len(vertices) < 3:
         return
 
@@ -181,17 +201,17 @@ def draw_polygon(renderer: PygameRenderer,
             points.append((px, py))
 
     if alpha < 255:
-        renderer.draw_polygon_alpha(points, color, alpha)
+        renderer.draw_polygon_alpha(points, rgb, alpha)
         renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
     else:
-        renderer.draw_polygon(points, color)
+        renderer.draw_polygon(points, rgb)
         renderer.draw_polygon(points, (0, 0, 0), 2)  # Border
 
 
 def draw_orientation_arrow(renderer: PygameRenderer,
                            start: Tuple[int, int],
                            end: Tuple[int, int],
-                           color: Tuple[int, int, int],
+                           color: ColorRGBA,
                            thickness: int = 2) -> None:
     """
     Draw an orientation arrow from start to end.
@@ -200,11 +220,13 @@ def draw_orientation_arrow(renderer: PygameRenderer,
         renderer: Renderer instance
         start: Arrow start in screen coordinates
         end: Arrow end in screen coordinates
-        color: RGB color tuple
+        color: RGBA color tuple
         thickness: Line thickness in pixels
     """
+    color = _ensure_rgba(color)
+    rgb = color[:3]
     # Draw main line
-    renderer.draw_line(start, end, color, thickness)
+    renderer.draw_line(start, end, rgb, thickness)
 
     # Calculate arrowhead
     dx = end[0] - start[0]
@@ -224,7 +246,7 @@ def draw_orientation_arrow(renderer: PygameRenderer,
         (end[0] - int(arrow_size * math.cos(screen_angle + 0.5)),
          end[1] - int(arrow_size * math.sin(screen_angle + 0.5)))
     ]
-    renderer.draw_polygon(arrowhead_points, color)
+    renderer.draw_polygon(arrowhead_points, rgb)
 
 
 def draw_label(renderer: PygameRenderer,
@@ -268,22 +290,20 @@ def draw_rigidbody(renderer: PygameRenderer,
     """
     style = rigidbody.style
 
-    # Draw shape based on type
+    # Draw shape based on type (ADR-8: colors are RGBA)
     if style.shape == RigidBodyShape.CIRCLE:
-        draw_circle(renderer, screen_pos, screen_size, style.color, style.alpha)
+        draw_circle(renderer, screen_pos, screen_size, style.color)
 
     elif style.shape == RigidBodyShape.BOX:
-        draw_box(renderer, screen_pos, screen_size, style.color,
-                 screen_orientation, style.alpha)
+        draw_box(renderer, screen_pos, screen_size, style.color, screen_orientation)
 
     elif style.shape == RigidBodyShape.TRIANGLE:
-        draw_triangle(renderer, screen_pos, screen_size, style.color,
-                      screen_orientation, style.alpha)
+        draw_triangle(renderer, screen_pos, screen_size, style.color, screen_orientation)
 
     elif style.shape == RigidBodyShape.POLYGON:
         if style.polygon_vertices:
             draw_polygon(renderer, screen_pos, style.polygon_vertices,
-                         screen_size, style.color, screen_orientation, style.alpha)
+                         screen_size, style.color, screen_orientation)
 
     # Draw orientation arrow if we have orientation end point
     if orientation_end is not None:

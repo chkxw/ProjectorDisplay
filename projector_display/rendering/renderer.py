@@ -180,10 +180,61 @@ class PygameRenderer:
         temp_surface = pygame.Surface((width, height), pygame.SRCALPHA)
         local_points = [(p[0] - min_x + 2, p[1] - min_y + 2) for p in points]
 
-        fill_color = (*color, alpha)
+        fill_color = (*color[:3], alpha)
         pygame.draw.polygon(temp_surface, fill_color, local_points, border)
 
         self.screen.blit(temp_surface, (min_x - 2, min_y - 2))
+
+    def draw_line_alpha(self, start: Tuple[int, int], end: Tuple[int, int],
+                        color: Tuple[int, int, int], alpha: int,
+                        width: int = 1) -> None:
+        """Draw a line with transparency (ADR-8: RGBA support for trajectory gradients)."""
+        if not self.screen or alpha == 0:
+            return
+
+        if alpha >= 255:
+            # No transparency needed
+            pygame.draw.line(self.screen, color[:3], start, end, width)
+            return
+
+        # Calculate bounding box with padding for line width
+        min_x = min(start[0], end[0]) - width
+        max_x = max(start[0], end[0]) + width
+        min_y = min(start[1], end[1]) - width
+        max_y = max(start[1], end[1]) + width
+        surf_width = max(1, max_x - min_x + 2)
+        surf_height = max(1, max_y - min_y + 2)
+
+        # Create transparent surface
+        temp_surface = pygame.Surface((surf_width, surf_height), pygame.SRCALPHA)
+        local_start = (start[0] - min_x + 1, start[1] - min_y + 1)
+        local_end = (end[0] - min_x + 1, end[1] - min_y + 1)
+
+        line_color = (*color[:3], alpha)
+        pygame.draw.line(temp_surface, line_color, local_start, local_end, width)
+
+        self.screen.blit(temp_surface, (min_x - 1, min_y - 1))
+
+    def draw_circle_alpha(self, center: Tuple[int, int], radius: int,
+                          color: Tuple[int, int, int], alpha: int,
+                          border: int = 0) -> None:
+        """Draw a circle with transparency."""
+        if not self.screen or alpha == 0:
+            return
+
+        if alpha >= 255:
+            pygame.draw.circle(self.screen, color[:3], center, radius, border)
+            return
+
+        # Create surface for the circle
+        size = radius * 2 + 4
+        temp_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+        local_center = (radius + 2, radius + 2)
+
+        circle_color = (*color[:3], alpha)
+        pygame.draw.circle(temp_surface, circle_color, local_center, radius, border)
+
+        self.screen.blit(temp_surface, (center[0] - radius - 2, center[1] - radius - 2))
 
     def flip(self) -> None:
         """Update display."""

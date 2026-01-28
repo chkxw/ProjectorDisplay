@@ -138,12 +138,16 @@ class Scene:
 
             # Update individual style attributes
             # TODO (F3): Add whitelist validation for production use
+            from projector_display.core.rigidbody import RigidBodyShape, _normalize_color
+
             for key, value in style_params.items():
                 if hasattr(rb.style, key):
                     if key == 'shape' and isinstance(value, str):
-                        from projector_display.core.rigidbody import RigidBodyShape
                         value = RigidBodyShape(value)
-                    elif key in ('color', 'label_offset', 'orientation_color') and isinstance(value, list):
+                    elif key in ('color', 'orientation_color') and isinstance(value, list):
+                        # ADR-8: Normalize to RGBA
+                        value = _normalize_color(tuple(value))
+                    elif key == 'label_offset' and isinstance(value, list):
                         value = tuple(value)
                     elif key == 'polygon_vertices' and value is not None:
                         value = [tuple(v) for v in value]
@@ -163,11 +167,17 @@ class Scene:
             if rb is None:
                 return False
 
+            from projector_display.core.rigidbody import _normalize_color
+
             # Update individual trajectory attributes
             for key, value in traj_params.items():
                 if hasattr(rb.trajectory_style, key):
-                    if key in ('color', 'gradient_start', 'gradient_end') and isinstance(value, list):
-                        value = tuple(value)
+                    if key in ('gradient_start', 'gradient_end') and isinstance(value, list):
+                        # ADR-8: Normalize to RGBA
+                        value = _normalize_color(tuple(value))
+                    elif key == 'color' and isinstance(value, list):
+                        # ADR-8: Normalize to RGBA (color can also be "gradient" string)
+                        value = _normalize_color(tuple(value))
                     setattr(rb.trajectory_style, key, value)
 
             return True
