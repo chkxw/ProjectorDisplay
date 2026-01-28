@@ -1,0 +1,40 @@
+# Projector Display Calibration File
+# ===================================
+#
+# This file defines the mapping between world coordinates (meters)
+# and screen coordinates (pixels).
+#
+# REQUIRED: The server will not start without a valid calibration file.
+#
+# Vertex Order Convention: [BL, BR, TR, TL] (counter-clockwise from bottom-left)
+# - BL = Bottom-Left
+# - BR = Bottom-Right
+# - TR = Top-Right
+# - TL = Top-Left
+
+# Resolution of the display when this calibration was created
+# If current resolution doesn't match, server will reject the calibration
+resolution:
+  width: 1920
+  height: 1080
+
+# Screen field mapping
+screen_field:
+  # World coordinates of the projected area corners (in meters)
+  # These are the physical positions in your lab/experiment space
+  world_points:
+    - [0.0, 0.0]    # BL - bottom-left corner in meters
+    - [4.0, 0.0]    # BR - bottom-right corner in meters
+    - [4.0, 3.0]    # TR - top-right corner in meters
+    - [0.0, 3.0]    # TL - top-left corner in meters
+
+  # Screen coordinates of the projected area corners (in pixels)
+  # Note: In pygame, Y=0 is at the TOP of the screen
+  local_points:
+    - [0, 1080]     # BL - bottom-left of screen
+    - [1920, 1080]  # BR - bottom-right of screen
+    - [1920, 0]     # TR - top-right of screen
+    - [0, 0]        # TL - top-left of screen
+
+# When this calibration was created (informational)
+created: "2026-01-27T12:00:00"

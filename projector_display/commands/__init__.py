@@ -2,7 +2,7 @@
 Command system for projector display server.
 
 Commands are registered using the @register_command decorator and auto-discovered
-from the core/ submodule on import.
+from the prebuilt/ submodule on import.
 """
 
 from projector_display.commands.base import (
@@ -11,8 +11,8 @@ from projector_display.commands.base import (
     get_registry,
 )
 
-# Auto-import core commands to register them
-from projector_display.commands import core
+# Auto-import prebuilt commands to register them
+from projector_display.commands import prebuilt
 
 __all__ = [
     "CommandRegistry",

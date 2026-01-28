@@ -1,0 +1,26 @@
+# Projector Display Server Configuration
+# =======================================
+#
+# This file configures the display server settings.
+# Use --calibration to specify the required calibration file.
+
+# Server settings
+server:
+  # Socket host to bind to (0.0.0.0 = all interfaces)
+  socket_host: "0.0.0.0"
+  # Socket port for client connections
+  socket_port: 9999
+
+# Display settings
+display:
+  # Which display to use (0 = primary, 1 = secondary, etc.)
+  screen_index: 0
+  # Target frame rate in Hz
+  update_rate: 30
+  # Background color [R, G, B]
+  background_color: [50, 50, 50]
+
+# Logging settings (optional, defaults used if not specified)
+# logging:
+#   level: INFO  # DEBUG, INFO, WARNING, ERROR
+#   file: /var/log/projector_display.log
