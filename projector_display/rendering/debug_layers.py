@@ -15,7 +15,6 @@ from projector_display.core.field_calibrator import FieldCalibrator, Field
 # Grid colors (matching reference implementation)
 GRID_MAJOR_COLOR = (100, 100, 100)
 GRID_MINOR_COLOR = (50, 50, 50)
-LABEL_COLOR = (200, 200, 200)
 
 
 class GridLayer:
@@ -25,27 +24,24 @@ class GridLayer:
     Shows:
     - Thick lines every 1 meter
     - Thin lines every 0.1 meter
-    - Coordinate labels at each 1m intersection
+    - Coordinate labels at each 1m intersection (same color as major lines)
     - Origin marker
     """
 
     def __init__(self,
                  major_color: Tuple[int, int, int] = GRID_MAJOR_COLOR,
                  minor_color: Tuple[int, int, int] = GRID_MINOR_COLOR,
-                 label_color: Tuple[int, int, int] = LABEL_COLOR,
                  show_minor: bool = True):
         """
         Initialize grid layer.
 
         Args:
-            major_color: Color for major grid lines (1m)
+            major_color: Color for major grid lines and labels (1m)
             minor_color: Color for minor grid lines (0.1m)
-            label_color: Color for coordinate labels
             show_minor: Whether to show minor grid lines
         """
         self.major_color = major_color
         self.minor_color = minor_color
-        self.label_color = label_color
         self.show_minor = show_minor
 
     def draw(self, renderer: PygameRenderer,
@@ -138,7 +134,7 @@ class GridLayer:
                     label = f"({x},{y})"
                     # Offset label slightly from intersection
                     renderer.draw_text(label, (pos[0] + 25, pos[1] - 10),
-                                        self.label_color, 18)
+                                        self.major_color, 18)
 
     def _draw_origin_marker(self, renderer: PygameRenderer,
                             world_to_screen: Callable) -> None:
