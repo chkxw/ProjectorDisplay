@@ -618,7 +618,7 @@ ProjectorDisplay/
   - Notes: Run with `python -m projector_display.tests.visual_tests`
 
 #### Phase 11: Storage & Assets (ADR-10)
-- [ ] **Task 11.1:** Implement storage manager
+- [x] **Task 11.1:** Implement storage manager
   - File: `projector_display/storage.py`
   - Action: Create `StorageManager` class with:
     - `get_data_dir()` → `~/.local/share/projector_display/` (XDG-compliant)
@@ -627,7 +627,7 @@ ProjectorDisplay/
     - `get_scene_dir(name)` → data_dir / `scenes/{name}/`
   - Notes: Create directories on first access if not exist
 
-- [ ] **Task 11.2:** Implement asset transfer commands
+- [x] **Task 11.2:** Implement asset transfer commands
   - File: `projector_display/commands/prebuilt/asset_commands.py`
   - Action: Implement pure asset transfer commands:
     - `check_image(name, hash)` → check if image exists and hash matches
@@ -643,14 +643,14 @@ ProjectorDisplay/
     - `{action: "replaced", message: "Replaced existing 'arena.png' (102.4 KB)"}`
   - Notes: Use SHA256 hash (first 16 chars), base64 encoding for data
 
-- [ ] **Task 11.3:** Implement field background commands
+- [x] **Task 11.3:** Implement field background commands
   - File: `projector_display/commands/prebuilt/field_commands.py`
   - Action: Add background configuration to field commands:
     - `set_field_background(field, image, alpha)` → assign uploaded image to field
     - `remove_field_background(field)` → clear background from field
   - Notes: Image must already be uploaded via asset_commands. This is field configuration, not asset transfer.
 
-- [ ] **Task 11.4:** Implement field background rendering
+- [x] **Task 11.4:** Implement field background rendering
   - Files: `projector_display/core/scene.py`, `projector_display/rendering/background.py`
   - Action:
     - Add `background` property to Field (image path, alpha)
@@ -658,7 +658,7 @@ ProjectorDisplay/
     - Render backgrounds before rigidbodies in render loop
   - Notes: Cache warped images to avoid re-computing each frame
 
-- [ ] **Task 11.5:** Implement scene persistence
+- [x] **Task 11.5:** Implement scene persistence
   - Files: `projector_display/commands/prebuilt/scene_commands.py`, `projector_display/storage.py`
   - Action: Extend `dump_scene(name)` to:
     - Create `~/.local/share/projector_display/scenes/{name}/`
@@ -666,7 +666,7 @@ ProjectorDisplay/
     - Generate `scene.yaml` from `Scene.to_dict()` with image refs
   - Notes: Use relative paths in scene.yaml (e.g., `images/arena.png`)
 
-- [ ] **Task 11.6:** Implement scene loading
+- [x] **Task 11.6:** Implement scene loading
   - Files: `projector_display/commands/prebuilt/scene_commands.py`
   - Action: Implement `load_scene(name)` to:
     - Load `scene.yaml` from persistent storage
@@ -674,7 +674,7 @@ ProjectorDisplay/
     - Copy scene images to session temp dir for working
   - Notes: Validate scene.yaml schema on load
 
-- [ ] **Task 11.7:** Add client-side image helper
+- [x] **Task 11.7:** Add client-side image helper
   - File: `projector_display/client.py`
   - Action: Add `set_field_background(field, image_path, alpha)` method that:
     - Computes local file hash
@@ -714,12 +714,12 @@ ProjectorDisplay/
 - [ ] **AC-15:** Given malformed command (bad JSON, missing params), when received, then error logged and error response sent (no crash)
 
 #### Storage & Assets (ADR-10)
-- [ ] **AC-16:** Given first server start, when no data dir exists, then `~/.local/share/projector_display/` is created automatically
-- [ ] **AC-17:** Given client uploads image "arena.png", when same image uploaded again (same hash), then server responds `{need_upload: false}` and skips transfer
-- [ ] **AC-18:** Given client uploads image "arena.png" with different content, when hash differs from existing, then server responds `{need_upload: true, reason: "hash_mismatch"}` and logs warning on replacement
-- [ ] **AC-19:** Given `dump_scene("experiment1")`, when executed, then scene.yaml and images/ are saved to `~/.local/share/projector_display/scenes/experiment1/`
-- [ ] **AC-20:** Given field "experiment" has background image, when rendered, then image is perspective-warped to fit field quadrilateral
-- [ ] **AC-21:** Given `load_scene("experiment1")`, when executed, then scene is reconstructed with all fields, rigidbodies, and background images
+- [x] **AC-16:** Given first server start, when no data dir exists, then `~/.local/share/projector_display/` is created automatically
+- [x] **AC-17:** Given client uploads image "arena.png", when same image uploaded again (same hash), then server responds `{need_upload: false}` and skips transfer
+- [x] **AC-18:** Given client uploads image "arena.png" with different content, when hash differs from existing, then server responds `{need_upload: true, reason: "hash_mismatch"}` and logs warning on replacement
+- [x] **AC-19:** Given `dump_scene("experiment1")`, when executed, then scene.yaml and images/ are saved to `~/.local/share/projector_display/scenes/experiment1/`
+- [x] **AC-20:** Given field "experiment" has background image, when rendered, then image is perspective-warped to fit field quadrilateral
+- [x] **AC-21:** Given `load_scene("experiment1")`, when executed, then scene is reconstructed with all fields, rigidbodies, and background images
 
 ## Additional Context
 
