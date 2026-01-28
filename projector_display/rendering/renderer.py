@@ -236,6 +236,20 @@ class PygameRenderer:
 
         self.screen.blit(temp_surface, (center[0] - radius - 2, center[1] - radius - 2))
 
+    def blit_surface(self, surface: pygame.Surface,
+                     position: Tuple[int, int]) -> None:
+        """
+        Blit a pre-rendered surface to the screen.
+
+        Used for background images and other pre-computed graphics.
+
+        Args:
+            surface: Pygame surface to blit
+            position: (x, y) position to blit at
+        """
+        if self.screen:
+            self.screen.blit(surface, position)
+
     def flip(self) -> None:
         """Update display."""
         pygame.display.flip()

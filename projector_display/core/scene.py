@@ -268,15 +268,27 @@ class Scene:
             Dictionary that can be YAML-serialized and used to recreate the scene
         """
         with self._lock:
-            return {
-                'fields': {
-                    name: {
-                        'world_points': field.world_points.tolist(),
-                        'local_points': field.local_points.tolist(),
+            fields_dict = {}
+            for name, field in self.field_calibrator.fields.items():
+                if name == "screen":  # Don't include screen field in scene dump
+                    continue
+
+                field_data = {
+                    'world_points': field.world_points.tolist(),
+                    'local_points': field.local_points.tolist(),
+                }
+
+                # Include background info if present (ADR-10)
+                if hasattr(field, 'background_image') and field.background_image:
+                    field_data['background'] = {
+                        'image': field.background_image,
+                        'alpha': getattr(field, 'background_alpha', 255)
                     }
-                    for name, field in self.field_calibrator.fields.items()
-                    if name != "screen"  # Don't include screen field in scene dump
-                },
+
+                fields_dict[name] = field_data
+
+            return {
+                'fields': fields_dict,
                 'rigidbodies': {
                     name: rb.to_dict()
                     for name, rb in self._rigidbodies.items()
@@ -303,6 +315,14 @@ class Scene:
                 world_points=field_data['world_points'],
                 local_points=field_data['local_points'],
             )
+
+            # Load field background if present (ADR-10)
+            background = field_data.get('background')
+            if background:
+                field = scene.get_field(name)
+                if field:
+                    field.background_image = background.get('image')
+                    field.background_alpha = background.get('alpha', 255)
 
         # Load rigid bodies
         for name, rb_data in data.get('rigidbodies', {}).items():

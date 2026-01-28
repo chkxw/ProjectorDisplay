@@ -4,12 +4,17 @@ Display client for projector display server.
 
 Provides a simple Python API for communicating with the display server.
 Based on display_client.py from box_push_deploy/shared/.
+
+ADR-10: Includes helper methods for image upload and field background management.
 """
 
+import base64
+import hashlib
 import socket
 import json
 import logging
-from typing import Dict, Any, Optional, List
+from pathlib import Path
+from typing import Dict, Any, Optional, List, Union
 
 logger = logging.getLogger(__name__)
 
@@ -343,6 +348,206 @@ class DisplayClient:
     def set_field_layer(self, enabled: bool) -> Optional[Dict]:
         """Set field layer visibility."""
         return self._send_command({"action": "set_field_layer", "enabled": enabled})
+
+    # --- Asset Commands (ADR-10) ---
+
+    def check_image(self, name: str, file_hash: Optional[str] = None) -> Optional[Dict]:
+        """
+        Check if an image exists on the server.
+
+        Args:
+            name: Image filename
+            file_hash: Optional SHA256 hash (first 16 chars) to verify
+
+        Returns:
+            Response with existence and hash match info
+        """
+        cmd = {"action": "check_image", "name": name}
+        if file_hash:
+            cmd["hash"] = file_hash
+        return self._send_command(cmd)
+
+    def upload_image(self, name: str, data: str) -> Optional[Dict]:
+        """
+        Upload base64-encoded image to the server.
+
+        Args:
+            name: Image filename
+            data: Base64-encoded image data
+
+        Returns:
+            Response with upload result
+        """
+        return self._send_command({
+            "action": "upload_image",
+            "name": name,
+            "data": data
+        })
+
+    def list_images(self) -> Optional[Dict]:
+        """List all images in the session."""
+        return self._send_command({"action": "list_images"})
+
+    def delete_image(self, name: str) -> Optional[Dict]:
+        """Delete an image from the session."""
+        return self._send_command({"action": "delete_image", "name": name})
+
+    def set_field_background_cmd(self, field: str, image: str,
+                                  alpha: int = 255) -> Optional[Dict]:
+        """
+        Set field background (low-level command).
+
+        Image must already be uploaded.
+
+        Args:
+            field: Field name
+            image: Image filename (already uploaded)
+            alpha: Opacity (0-255)
+
+        Returns:
+            Response with result
+        """
+        return self._send_command({
+            "action": "set_field_background",
+            "field": field,
+            "image": image,
+            "alpha": alpha
+        })
+
+    def remove_field_background(self, field: str) -> Optional[Dict]:
+        """Remove background from a field."""
+        return self._send_command({
+            "action": "remove_field_background",
+            "field": field
+        })
+
+    # --- High-Level Image Helper (ADR-10) ---
+
+    @staticmethod
+    def _compute_file_hash(file_path: Path) -> str:
+        """Compute SHA256 hash (first 16 chars) of a file."""
+        with open(file_path, 'rb') as f:
+            return hashlib.sha256(f.read()).hexdigest()[:16]
+
+    @staticmethod
+    def _encode_file_base64(file_path: Path) -> str:
+        """Read file and encode as base64."""
+        with open(file_path, 'rb') as f:
+            return base64.b64encode(f.read()).decode('ascii')
+
+    def set_field_background(self, field: str, image_path: Union[str, Path],
+                             alpha: int = 255) -> Optional[Dict]:
+        """
+        Set a field's background image with automatic upload if needed.
+
+        This high-level helper orchestrates the 3-step flow:
+        1. Compute local file hash
+        2. Check if server has the image (skip upload if hash matches)
+        3. Upload image if needed
+        4. Set the field background
+
+        Args:
+            field: Field name to set background for
+            image_path: Path to the local image file
+            alpha: Opacity (0-255, default 255 = fully opaque)
+
+        Returns:
+            Response with result, or None on error
+        """
+        image_path = Path(image_path)
+
+        if not image_path.exists():
+            logger.error(f"Image file not found: {image_path}")
+            return {"status": "error", "message": f"File not found: {image_path}"}
+
+        # Use just the filename for server storage
+        image_name = image_path.name
+
+        # Step 1: Compute local file hash
+        local_hash = self._compute_file_hash(image_path)
+        logger.debug(f"Local image hash: {local_hash}")
+
+        # Step 2: Check if server has this image
+        check_result = self.check_image(image_name, local_hash)
+        if check_result is None:
+            return None
+
+        need_upload = True
+
+        if check_result.get("exists"):
+            if check_result.get("hash_match"):
+                # Image exists and matches - no upload needed
+                logger.info(f"Image '{image_name}' already on server (hash matches)")
+                need_upload = False
+            else:
+                # Image exists but different content - will replace
+                logger.warning(f"Image '{image_name}' exists on server but differs, will replace")
+        else:
+            logger.debug(f"Image '{image_name}' not found on server, uploading")
+
+        # Step 3: Upload if needed
+        if need_upload:
+            image_data = self._encode_file_base64(image_path)
+            upload_result = self.upload_image(image_name, image_data)
+
+            if upload_result is None:
+                return None
+
+            if upload_result.get("status") != "success":
+                logger.error(f"Failed to upload image: {upload_result.get('message')}")
+                return upload_result
+
+            logger.info(f"Uploaded image: {upload_result.get('message')}")
+
+        # Step 4: Set the field background
+        result = self.set_field_background_cmd(field, image_name, alpha)
+
+        if result and result.get("status") == "success":
+            logger.info(f"Set background for field '{field}': {image_name} (alpha={alpha})")
+
+        return result
+
+    # --- Scene Persistence Commands (ADR-10) ---
+
+    def save_scene(self, name: str) -> Optional[Dict]:
+        """
+        Save current scene to persistent storage.
+
+        Args:
+            name: Name for the saved scene
+
+        Returns:
+            Response with save result
+        """
+        return self._send_command({"action": "save_scene", "name": name})
+
+    def load_scene_from_file(self, name: str) -> Optional[Dict]:
+        """
+        Load scene from persistent storage.
+
+        Args:
+            name: Name of the saved scene
+
+        Returns:
+            Response with load result
+        """
+        return self._send_command({"action": "load_scene_from_file", "name": name})
+
+    def list_saved_scenes(self) -> Optional[Dict]:
+        """List all saved scenes."""
+        return self._send_command({"action": "list_saved_scenes"})
+
+    def delete_saved_scene(self, name: str) -> Optional[Dict]:
+        """
+        Delete a saved scene.
+
+        Args:
+            name: Name of the scene to delete
+
+        Returns:
+            Response with deletion result
+        """
+        return self._send_command({"action": "delete_saved_scene", "name": name})
 
     # --- Context Manager ---
 

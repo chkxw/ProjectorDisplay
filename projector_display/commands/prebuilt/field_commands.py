@@ -3,10 +3,16 @@ Field commands for projector display server.
 
 Commands for managing coordinate fields in the scene.
 Vertex order convention: [BL, BR, TR, TL] (counter-clockwise from bottom-left)
+
+ADR-10: Includes background configuration commands for field backgrounds.
 """
 
-from typing import List
+import logging
+from typing import List, Optional
 from projector_display.commands.base import register_command
+from projector_display.storage import get_storage_manager
+
+logger = logging.getLogger(__name__)
 
 
 @register_command
@@ -84,7 +90,7 @@ def get_field(scene, name: str) -> dict:
     if field is None:
         return {"status": "error", "message": f"Field '{name}' not found"}
 
-    return {
+    result = {
         "status": "success",
         "field": {
             "name": field.name,
@@ -92,3 +98,101 @@ def get_field(scene, name: str) -> dict:
             "local_points": field.local_points.tolist(),
         }
     }
+
+    # Include background info if present
+    if hasattr(field, 'background_image') and field.background_image:
+        result["field"]["background"] = {
+            "image": field.background_image,
+            "alpha": getattr(field, 'background_alpha', 255)
+        }
+
+    return result
+
+
+@register_command
+def set_field_background(scene, field: str, image: str, alpha: int = 255) -> dict:
+    """
+    Assign an uploaded image as the background for a field.
+
+    The image must already be uploaded via upload_image command.
+    This command only configures the field-to-image assignment.
+
+    Args:
+        scene: Scene instance
+        field: Field name to set background for
+        image: Image filename (must already be uploaded)
+        alpha: Opacity (0-255, default 255 = fully opaque)
+
+    Returns:
+        Response with status
+    """
+    # Validate field exists
+    field_obj = scene.get_field(field)
+    if field_obj is None:
+        return {"status": "error", "message": f"Field '{field}' not found"}
+
+    # Validate image exists in session
+    storage = get_storage_manager()
+    images_dir = storage.get_session_images_dir()
+    image_path = images_dir / image
+
+    if not image_path.exists():
+        return {
+            "status": "error",
+            "message": f"Image '{image}' not found. Upload it first using upload_image."
+        }
+
+    # Validate alpha
+    if not 0 <= alpha <= 255:
+        return {"status": "error", "message": f"Alpha must be 0-255, got {alpha}"}
+
+    # Set background properties on field
+    field_obj.background_image = image
+    field_obj.background_alpha = alpha
+
+    logger.info(f"Set background for field '{field}': {image} (alpha={alpha})")
+
+    return {
+        "status": "success",
+        "message": f"Set background '{image}' on field '{field}'",
+        "field": field,
+        "image": image,
+        "alpha": alpha
+    }
+
+
+@register_command
+def remove_field_background(scene, field: str) -> dict:
+    """
+    Clear the background from a field.
+
+    Args:
+        scene: Scene instance
+        field: Field name to remove background from
+
+    Returns:
+        Response with status
+    """
+    # Validate field exists
+    field_obj = scene.get_field(field)
+    if field_obj is None:
+        return {"status": "error", "message": f"Field '{field}' not found"}
+
+    # Check if field has a background
+    had_background = hasattr(field_obj, 'background_image') and field_obj.background_image
+
+    # Clear background properties
+    field_obj.background_image = None
+    field_obj.background_alpha = 255
+
+    if had_background:
+        logger.info(f"Removed background from field '{field}'")
+        return {
+            "status": "success",
+            "message": f"Removed background from field '{field}'"
+        }
+    else:
+        return {
+            "status": "success",
+            "message": f"Field '{field}' had no background"
+        }

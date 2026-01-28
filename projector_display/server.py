@@ -34,8 +34,10 @@ from projector_display.rendering.renderer import PygameRenderer
 from projector_display.rendering.primitives import draw_rigidbody
 from projector_display.rendering.trajectory import draw_trajectory
 from projector_display.rendering.debug_layers import GridLayer, FieldLayer
+from projector_display.rendering.background import BackgroundRenderer
 from projector_display.commands import get_registry
 from projector_display.utils.logging import setup_logging, get_logger
+from projector_display.storage import init_storage_manager, get_storage_manager
 
 
 # Default configuration
@@ -72,6 +74,9 @@ class ProjectorDisplayServer:
         self.verbose = verbose
         self.config: Dict = {}
 
+        # Initialize storage manager for this session (ADR-10)
+        self.storage = init_storage_manager()
+
         # Core components
         self.scene = Scene()
         self.renderer: Optional[PygameRenderer] = None
@@ -93,6 +98,9 @@ class ProjectorDisplayServer:
         # Debug layers
         self.grid_layer = GridLayer()
         self.field_layer = FieldLayer()
+
+        # Background renderer (ADR-10)
+        self.background_renderer = BackgroundRenderer()
 
         # Cached transform values
         self._screen_width = 0
@@ -411,6 +419,13 @@ class ProjectorDisplayServer:
         # Clear screen
         self.renderer.clear(self.background_color)
 
+        # Render field backgrounds (ADR-10) - before everything else
+        self.background_renderer.render_field_backgrounds(
+            self.renderer,
+            self.scene.field_calibrator.fields,
+            self.world_to_screen
+        )
+
         # Draw debug layers if enabled
         if self.scene.grid_layer_enabled and self._world_bounds:
             self.grid_layer.draw(self.renderer, self.world_to_screen, self._world_bounds)
@@ -529,6 +544,10 @@ class ProjectorDisplayServer:
                 self.renderer.quit()
             except Exception:
                 pass
+
+        # ADR-10: Clean up session temp directory
+        if self.storage:
+            self.storage.cleanup_session()
 
         self.logger.info("Shutdown complete")
 
