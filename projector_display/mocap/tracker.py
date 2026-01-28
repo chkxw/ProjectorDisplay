@@ -20,12 +20,15 @@ logger = logging.getLogger(__name__)
 # Default MoCap polling rate (Hz)
 DEFAULT_POLL_RATE = 30
 
+# Default NatNet command port (OptiTrack)
+DEFAULT_NATNET_PORT = 1511
+
 
 @dataclass
 class MocapConfig:
     """Configuration for MoCap connection."""
     ip: str = ""
-    port: int = 1511  # Default NatNet command port
+    port: int = DEFAULT_NATNET_PORT
     enabled: bool = False
 
     def is_configured(self) -> bool:
@@ -43,7 +46,7 @@ class MocapConfig:
     def from_dict(cls, data: dict) -> "MocapConfig":
         return cls(
             ip=data.get("ip", ""),
-            port=data.get("port", 1511),
+            port=data.get("port", DEFAULT_NATNET_PORT),
             enabled=data.get("enabled", False),
         )
 
@@ -88,10 +91,12 @@ class MocapTracker:
         self._connected = False
         self._running = False
         self._thread: Optional[threading.Thread] = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # Reentrant lock for nested calls
 
         self._poll_rate = DEFAULT_POLL_RATE
         self._last_error: Optional[str] = None
+        self._in_error_state: bool = False  # For log rate-limiting
+        self._missing_bodies: set = set()  # Track bodies not found (log once)
 
     def _check_mocap_available(self) -> bool:
         """Check if MocapUtility is available (installed)."""
@@ -136,18 +141,26 @@ class MocapTracker:
         """Get last error message."""
         return self._last_error
 
-    def set_config(self, ip: str, port: int = 1511, enabled: bool = True) -> dict:
+    def set_config(self, ip: str, port: int = DEFAULT_NATNET_PORT, enabled: bool = True) -> dict:
         """
         Configure MoCap connection settings.
 
         Args:
             ip: MoCap server IP address
-            port: NatNet port (default 1511)
+            port: NatNet port (default DEFAULT_NATNET_PORT, valid range 1-65535)
             enabled: Whether to enable MoCap (default True)
 
         Returns:
             Result dict with status
         """
+        # Validate port range
+        if not (1 <= port <= 65535):
+            return {
+                "status": "error",
+                "message": f"Invalid port {port}: must be between 1 and 65535",
+                "code": "INVALID_PORT",
+            }
+
         with self._lock:
             self._config.ip = ip
             self._config.port = port
@@ -189,13 +202,14 @@ class MocapTracker:
             }
 
         with self._lock:
-            self._config.enabled = True
-
             # Connect if not already connected
             if not self._connected:
                 result = self._connect()
                 if result["status"] != "success":
-                    return result
+                    return result  # Don't set enabled on failure
+
+            # Only set enabled after successful connect
+            self._config.enabled = True
 
             # Start polling thread if not running
             if not self._running:
@@ -248,6 +262,7 @@ class MocapTracker:
         except Exception as e:
             self._last_error = str(e)
             self._connected = False
+            self._mocap = None  # Clean up failed instance
             logger.error(f"Failed to connect to MoCap: {e}")
             return {
                 "status": "error",
@@ -270,6 +285,11 @@ class MocapTracker:
         if self._running:
             return
 
+        # Prevent duplicate threads if previous one didn't stop cleanly
+        if self._thread and self._thread.is_alive():
+            logger.warning("Previous polling thread still running, skipping start")
+            return
+
         self._running = True
         self._thread = threading.Thread(target=self._poll_loop, daemon=True)
         self._thread.start()
@@ -290,9 +310,18 @@ class MocapTracker:
         while self._running:
             try:
                 self._update_tracked_bodies()
+                # Clear error state on success
+                if self._in_error_state:
+                    logger.info("MoCap poll loop recovered")
+                    self._in_error_state = False
             except Exception as e:
-                logger.error(f"Error in MoCap poll loop: {e}")
                 self._last_error = str(e)
+                # First error logs as ERROR, subsequent as DEBUG
+                if not self._in_error_state:
+                    logger.error(f"Error in MoCap poll loop: {e}")
+                    self._in_error_state = True
+                else:
+                    logger.debug(f"Error in MoCap poll loop (repeated): {e}")
 
             time.sleep(poll_interval)
 
@@ -312,7 +341,16 @@ class MocapTracker:
                 # Get position from MoCap (x, y, z) -> we use (x, y)
                 pos = self._mocap.get_pos(rb.mocap_name)
                 if pos is None:
+                    # Log once per missing body
+                    if rb.mocap_name not in self._missing_bodies:
+                        logger.warning(f"MoCap body '{rb.mocap_name}' not found for rigidbody '{rb.name}'")
+                        self._missing_bodies.add(rb.mocap_name)
                     continue
+
+                # Body found - clear from missing set if it was there
+                if rb.mocap_name in self._missing_bodies:
+                    logger.info(f"MoCap body '{rb.mocap_name}' now available")
+                    self._missing_bodies.discard(rb.mocap_name)
 
                 # Get orientation from MoCap (quaternion) -> convert to yaw
                 quat = self._mocap.get_quat(rb.mocap_name)

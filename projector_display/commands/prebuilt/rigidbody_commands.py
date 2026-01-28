@@ -7,6 +7,9 @@ All position commands must specify `field` parameter for coordinate interpretati
 
 from typing import Optional, Dict, Any
 from projector_display.commands.base import register_command
+from projector_display.commands.prebuilt.mocap_commands import (
+    _get_mocap_tracker, _require_mocap_enabled
+)
 
 
 @register_command
@@ -32,29 +35,14 @@ def create_rigidbody(scene, name: str, style: dict = None,
     """
     # If auto_track requested, validate MoCap is available
     if auto_track:
-        tracker = getattr(scene, '_mocap_tracker', None)
-        if tracker is None:
-            return {
-                "status": "error",
-                "message": "Cannot enable auto_track: MoCap tracker not initialized.",
-                "code": "MOCAP_NOT_INITIALIZED",
-            }
+        tracker, error = _get_mocap_tracker(scene)
+        if error:
+            return error
 
-        if not tracker.is_available():
-            return {
-                "status": "error",
-                "message": "Cannot enable auto_track: MocapUtility not installed.",
-                "code": "MOCAP_NOT_INSTALLED",
-            }
-
-        if not tracker.is_enabled():
-            return {
-                "status": "error",
-                "message": "Cannot enable auto_track: MoCap not enabled. "
-                           "Call set_mocap() or enable_mocap() first, "
-                           "or create with auto_track=False.",
-                "code": "MOCAP_NOT_ENABLED",
-            }
+        check_error = _require_mocap_enabled(tracker)
+        if check_error:
+            check_error["hint"] = "Create with auto_track=False, or enable MoCap first."
+            return check_error
 
         if not mocap_name:
             return {
@@ -63,8 +51,7 @@ def create_rigidbody(scene, name: str, style: dict = None,
             }
 
     rb = scene.create_rigidbody(name, style=style, trajectory=trajectory,
-                                 mocap_name=mocap_name)
-    rb.auto_track = auto_track
+                                 mocap_name=mocap_name, auto_track=auto_track)
 
     result = {"status": "success", "name": rb.name}
     if mocap_name:

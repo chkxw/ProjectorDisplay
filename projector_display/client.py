@@ -16,6 +16,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 
+from projector_display.mocap import DEFAULT_NATNET_PORT
+
 logger = logging.getLogger(__name__)
 
 
@@ -555,14 +557,14 @@ class DisplayClient:
 
     # --- MoCap Commands ---
 
-    def set_mocap(self, ip: str, port: int = 1511,
+    def set_mocap(self, ip: str, port: int = DEFAULT_NATNET_PORT,
                   enabled: bool = True) -> Optional[Dict]:
         """
         Configure MoCap server connection.
 
         Args:
             ip: MoCap server IP address
-            port: NatNet port (default 1511)
+            port: NatNet port (default DEFAULT_NATNET_PORT)
             enabled: Enable MoCap immediately (default True)
 
         Returns:

@@ -48,7 +48,8 @@ class Scene:
 
     def create_rigidbody(self, name: str, style: Optional[dict] = None,
                          trajectory: Optional[dict] = None,
-                         mocap_name: Optional[str] = None) -> RigidBody:
+                         mocap_name: Optional[str] = None,
+                         auto_track: bool = False) -> RigidBody:
         """
         Create a new rigid body for display.
 
@@ -57,6 +58,7 @@ class Scene:
             style: Optional style configuration dict
             trajectory: Optional trajectory configuration dict
             mocap_name: Optional name in MoCap system
+            auto_track: Enable auto-tracking from MoCap (default False)
 
         Returns:
             The created RigidBody
@@ -68,7 +70,7 @@ class Scene:
             if name in self._rigidbodies:
                 raise ValueError(f"RigidBody '{name}' already exists")
 
-            rb = RigidBody(name=name, mocap_name=mocap_name)
+            rb = RigidBody(name=name, mocap_name=mocap_name, auto_track=auto_track)
 
             if style:
                 rb.style = RigidBodyStyle.from_dict(style)
@@ -120,6 +122,29 @@ class Scene:
             if rb is None:
                 return False
             rb.update_position(x, y, orientation)
+            return True
+
+    def set_rigidbody_tracking(self, name: str, mocap_name: Optional[str] = None,
+                                auto_track: Optional[bool] = None) -> bool:
+        """
+        Configure MoCap tracking for a rigid body.
+
+        Args:
+            name: Rigid body name
+            mocap_name: Name in MoCap system (None = don't change)
+            auto_track: Enable/disable auto-tracking (None = don't change)
+
+        Returns:
+            True if updated, False if rigid body not found
+        """
+        with self._lock:
+            rb = self._rigidbodies.get(name)
+            if rb is None:
+                return False
+            if mocap_name is not None:
+                rb.mocap_name = mocap_name
+            if auto_track is not None:
+                rb.auto_track = auto_track
             return True
 
     def update_style(self, name: str, **style_params) -> bool:
@@ -331,6 +356,7 @@ class Scene:
                 style=rb_data.get('style'),
                 trajectory=rb_data.get('trajectory'),
                 mocap_name=rb_data.get('mocap_name'),
+                auto_track=rb_data.get('auto_track', False),
             )
             if rb_data.get('position'):
                 rb.position = tuple(rb_data['position'])

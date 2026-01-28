@@ -9,6 +9,7 @@ import logging
 from typing import Optional
 
 from projector_display.commands.base import register_command
+from projector_display.mocap import DEFAULT_NATNET_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -66,14 +67,14 @@ def _require_mocap_enabled(tracker) -> Optional[dict]:
 # =============================================================================
 
 @register_command
-def set_mocap(scene, ip: str, port: int = 1511, enabled: bool = True) -> dict:
+def set_mocap(scene, ip: str, port: int = DEFAULT_NATNET_PORT, enabled: bool = True) -> dict:
     """
     Configure MoCap server connection settings.
 
     Args:
         scene: Scene instance
         ip: MoCap server IP address
-        port: NatNet port (default 1511)
+        port: NatNet port (default DEFAULT_NATNET_PORT)
         enabled: Whether to enable MoCap immediately (default True)
 
     Returns:
@@ -192,7 +193,7 @@ def set_auto_track(scene, name: str, mocap_name: Optional[str] = None,
         - Setting mocap_name with enabled=False is always allowed (config only)
         - Setting enabled=True requires MoCap to be enabled
     """
-    # Get rigidbody
+    # Check rigidbody exists
     rb = scene.get_rigidbody(name)
     if rb is None:
         return {
@@ -200,11 +201,7 @@ def set_auto_track(scene, name: str, mocap_name: Optional[str] = None,
             "message": f"Rigidbody '{name}' not found",
         }
 
-    # Update mocap_name if provided
-    if mocap_name is not None:
-        rb.mocap_name = mocap_name
-
-    # If enabling tracking, check MoCap is available
+    # If enabling tracking, validate MoCap is available
     if enabled:
         tracker, error = _get_mocap_tracker(scene)
         if error:
@@ -212,20 +209,23 @@ def set_auto_track(scene, name: str, mocap_name: Optional[str] = None,
 
         check_error = _require_mocap_enabled(tracker)
         if check_error:
-            # Add hint about setting enabled=False
             check_error["hint"] = "You can set mocap_name with enabled=False to configure without enabling tracking."
             return check_error
 
-        # Check rigidbody has mocap_name
-        if not rb.mocap_name:
+        # Check rigidbody will have mocap_name (either provided or existing)
+        effective_mocap_name = mocap_name if mocap_name is not None else rb.mocap_name
+        if not effective_mocap_name:
             return {
                 "status": "error",
                 "message": f"Cannot enable tracking: Rigidbody '{name}' has no mocap_name set.",
                 "hint": "Provide mocap_name parameter or set it first.",
             }
 
-    rb.auto_track = enabled
+    # Apply changes atomically through Scene (thread-safe)
+    scene.set_rigidbody_tracking(name, mocap_name=mocap_name, auto_track=enabled)
 
+    # Get updated state for response
+    rb = scene.get_rigidbody(name)
     action = "enabled" if enabled else "disabled"
     msg = f"Auto-tracking {action} for '{name}'"
     if mocap_name:
