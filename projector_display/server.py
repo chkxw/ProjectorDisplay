@@ -564,6 +564,10 @@ class ProjectorDisplayServer:
 
 def main():
     """Entry point for the display server."""
+    # Get default calibration path from storage manager
+    storage = get_storage_manager()
+    default_calibration = storage.get_calibration_path()
+
     parser = argparse.ArgumentParser(
         description="Projector Display Server - Scene-based visualization for robot experiments"
     )
@@ -573,8 +577,8 @@ def main():
     )
     parser.add_argument(
         "--calibration", "-C",
-        required=True,
-        help="Path to calibration YAML (required)"
+        default=str(default_calibration),
+        help=f"Path to calibration YAML (default: {default_calibration})"
     )
     parser.add_argument(
         "-v", "--verbose",
