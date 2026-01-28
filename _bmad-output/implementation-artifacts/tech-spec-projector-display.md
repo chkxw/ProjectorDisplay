@@ -292,6 +292,85 @@ def my_custom_display(scene, name: str, special_param: float):
 
 **Auto-discovery:** Commands module auto-loads all `prebuilt/` commands on import. User commands registered via decorator.
 
+#### ADR-10: Storage & Scene Persistence
+**Decision:** XDG-compliant persistent storage with temporary working directory pattern.
+**Rationale:** Clean separation between working state (temp) and saved scenes (persistent). Original filenames preserved for user clarity.
+
+**Storage Structure:**
+```
+~/.local/share/projector_display/           # Persistent storage (XDG_DATA_HOME)
+├── calibration.yaml                        # Global screen calibration (required)
+└── scenes/
+    └── {scene_name}/                       # Saved scene
+        ├── scene.yaml                      # Generated from Scene.to_dict()
+        └── images/
+            └── arena.png                   # Original filenames preserved
+
+/tmp/projector_display/{session_id}/        # Ephemeral working directory
+└── images/
+    └── arena.png                           # Temp uploads during session
+```
+
+**Workflow:**
+1. **Server Start**: Create temp session dir `/tmp/projector_display/{uuid}/`
+2. **Working Phase**: Images uploaded to temp `images/` folder
+3. **dump_scene("name")**: Copy temp folder → persistent location, generate `scene.yaml`
+
+**Image Upload Protocol:**
+```
+Client                                      Server
+  │                                           │
+  │  set_field_background                     │
+  │  {field, image: "arena.png",              │
+  │   hash: "a1b2...", alpha: 200}            │
+  │ ─────────────────────────────────────────►│
+  │                                           │ Check: exists? hash match?
+  │  Response (one of):                       │
+  │  ◄─────────────────────────────────────── │
+  │                                           │
+  │  Case A: {need_upload: false,             │  # Hash matches
+  │           message: "...already exists..."}│
+  │                                           │
+  │  Case B: {need_upload: true,              │  # File not found
+  │           reason: "not_found",            │
+  │           message: "...not found..."}     │
+  │                                           │
+  │  Case C: {need_upload: true,              │  # Hash mismatch
+  │           reason: "hash_mismatch",        │
+  │           message: "...differs (will replace)"}
+  │                                           │
+  │  upload_image {name, data: base64}        │  # If need_upload
+  │ ─────────────────────────────────────────►│
+  │                                           │
+  │  {status: success,                        │
+  │   action: "created" | "replaced",         │
+  │   message: "Saved/Replaced 'arena.png'"}  │
+  │ ◄─────────────────────────────────────────│
+```
+
+**Logging:**
+- `INFO`: New image saved, image replaced, scene dumped
+- `WARNING`: Hash mismatch (will replace)
+- `DEBUG`: Hash match (skip upload)
+
+**scene.yaml Format:**
+```yaml
+created: "2026-01-28T12:00:00"
+fields:
+  experiment:
+    world_points: [[0,0], [4,0], [4,3], [0,3]]
+    local_points: [[0,1080], [1920,1080], [1920,0], [0,0]]
+    background:
+      image: arena.png        # Relative to images/ folder
+      alpha: 200
+rigidbodies:
+  go1_1:
+    position: [1.5, 2.0]
+    orientation: 0.5
+    style: {shape: triangle, color: [255,0,0,150], size: 0.2}
+    trajectory: {enabled: true, color: gradient, ...}
+```
+
 ### Pre-mortem Prevention Measures
 
 Critical safeguards identified through failure analysis:
@@ -356,6 +435,7 @@ ProjectorDisplay/
 │   ├── __init__.py
 │   ├── server.py                  # Display server entry point
 │   ├── client.py                  # Client library
+│   ├── storage.py                 # Storage manager (ADR-10)
 │   │
 │   ├── core/
 │   │   ├── __init__.py
@@ -371,7 +451,8 @@ ProjectorDisplay/
 │   │   │   ├── rigidbody_commands.py
 │   │   │   ├── field_commands.py
 │   │   │   ├── scene_commands.py
-│   │   │   └── debug_commands.py
+│   │   │   ├── debug_commands.py
+│   │   │   └── asset_commands.py  # Image upload/background (ADR-10)
 │   │   └── pygame/                # Future: low-level pygame commands
 │   │       └── __init__.py
 │   │
@@ -380,6 +461,7 @@ ProjectorDisplay/
 │   │   ├── renderer.py            # Renderer protocol + PygameRenderer
 │   │   ├── primitives.py          # Shape drawing
 │   │   ├── trajectory.py          # Trajectory rendering
+│   │   ├── background.py          # Field background rendering (ADR-10)
 │   │   └── debug_layers.py        # Grid + field overlay
 │   │
 │   └── utils/
@@ -535,6 +617,73 @@ ProjectorDisplay/
     - Coordinate transform verification (known positions)
   - Notes: Run with `python -m projector_display.tests.visual_tests`
 
+#### Phase 11: Storage & Assets (ADR-10)
+- [ ] **Task 11.1:** Implement storage manager
+  - File: `projector_display/storage.py`
+  - Action: Create `StorageManager` class with:
+    - `get_data_dir()` → `~/.local/share/projector_display/` (XDG-compliant)
+    - `get_session_dir()` → `/tmp/projector_display/{session_id}/`
+    - `get_calibration_path()` → data_dir / `calibration.yaml`
+    - `get_scene_dir(name)` → data_dir / `scenes/{name}/`
+  - Notes: Create directories on first access if not exist
+
+- [ ] **Task 11.2:** Implement asset transfer commands
+  - File: `projector_display/commands/prebuilt/asset_commands.py`
+  - Action: Implement pure asset transfer commands:
+    - `check_image(name, hash)` → check if image exists and hash matches
+    - `upload_image(name, data)` → save to session images folder
+    - `list_images()` → list all images in session
+    - `delete_image(name)` → remove image from session
+  - Response format for check_image:
+    - `{exists: true, hash_match: true}` when hash matches
+    - `{exists: true, hash_match: false, reason: "hash_mismatch"}` when differs
+    - `{exists: false, reason: "not_found"}` when not found
+  - Response format for upload_image:
+    - `{action: "created", message: "Saved 'arena.png' (102.4 KB)"}`
+    - `{action: "replaced", message: "Replaced existing 'arena.png' (102.4 KB)"}`
+  - Notes: Use SHA256 hash (first 16 chars), base64 encoding for data
+
+- [ ] **Task 11.3:** Implement field background commands
+  - File: `projector_display/commands/prebuilt/field_commands.py`
+  - Action: Add background configuration to field commands:
+    - `set_field_background(field, image, alpha)` → assign uploaded image to field
+    - `remove_field_background(field)` → clear background from field
+  - Notes: Image must already be uploaded via asset_commands. This is field configuration, not asset transfer.
+
+- [ ] **Task 11.4:** Implement field background rendering
+  - Files: `projector_display/core/scene.py`, `projector_display/rendering/background.py`
+  - Action:
+    - Add `background` property to Field (image path, alpha)
+    - Implement perspective warp using OpenCV `warpPerspective`
+    - Render backgrounds before rigidbodies in render loop
+  - Notes: Cache warped images to avoid re-computing each frame
+
+- [ ] **Task 11.5:** Implement scene persistence
+  - Files: `projector_display/commands/prebuilt/scene_commands.py`, `projector_display/storage.py`
+  - Action: Extend `dump_scene(name)` to:
+    - Create `~/.local/share/projector_display/scenes/{name}/`
+    - Copy images from temp session dir to scene images folder
+    - Generate `scene.yaml` from `Scene.to_dict()` with image refs
+  - Notes: Use relative paths in scene.yaml (e.g., `images/arena.png`)
+
+- [ ] **Task 11.6:** Implement scene loading
+  - Files: `projector_display/commands/prebuilt/scene_commands.py`
+  - Action: Implement `load_scene(name)` to:
+    - Load `scene.yaml` from persistent storage
+    - Reconstruct Scene with fields, rigidbodies, backgrounds
+    - Copy scene images to session temp dir for working
+  - Notes: Validate scene.yaml schema on load
+
+- [ ] **Task 11.7:** Add client-side image helper
+  - File: `projector_display/client.py`
+  - Action: Add `set_field_background(field, image_path, alpha)` method that:
+    - Computes local file hash
+    - Calls `check_image` (asset command)
+    - Calls `upload_image` if needed (asset command)
+    - Calls `set_field_background` (field command)
+    - Logs progress and warns on replacement
+  - Notes: Client orchestrates the 3-step flow; server commands stay single-purpose
+
 ### Acceptance Criteria
 
 #### Core Functionality
@@ -563,6 +712,14 @@ ProjectorDisplay/
 #### Error Handling
 - [ ] **AC-14:** Given unhandled exception in command handler, when it occurs, then server crashes (does not silently continue)
 - [ ] **AC-15:** Given malformed command (bad JSON, missing params), when received, then error logged and error response sent (no crash)
+
+#### Storage & Assets (ADR-10)
+- [ ] **AC-16:** Given first server start, when no data dir exists, then `~/.local/share/projector_display/` is created automatically
+- [ ] **AC-17:** Given client uploads image "arena.png", when same image uploaded again (same hash), then server responds `{need_upload: false}` and skips transfer
+- [ ] **AC-18:** Given client uploads image "arena.png" with different content, when hash differs from existing, then server responds `{need_upload: true, reason: "hash_mismatch"}` and logs warning on replacement
+- [ ] **AC-19:** Given `dump_scene("experiment1")`, when executed, then scene.yaml and images/ are saved to `~/.local/share/projector_display/scenes/experiment1/`
+- [ ] **AC-20:** Given field "experiment" has background image, when rendered, then image is perspective-warped to fit field quadrilateral
+- [ ] **AC-21:** Given `load_scene("experiment1")`, when executed, then scene is reconstructed with all fields, rigidbodies, and background images
 
 ## Additional Context
 
