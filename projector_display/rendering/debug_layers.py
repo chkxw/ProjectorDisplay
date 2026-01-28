@@ -9,7 +9,7 @@ Two togglable overlay layers for on-demand debugging:
 import math
 from typing import Callable, Dict, Tuple, List
 from projector_display.rendering.renderer import PygameRenderer
-from projector_display.core.field_calibrator import FieldCalibrator, Field
+from projector_display.core.field_calibrator import Field
 
 
 # Grid colors (matching reference implementation)
@@ -180,17 +180,17 @@ class FieldLayer:
         self.corner_color = corner_color
 
     def draw(self, renderer: PygameRenderer,
-             field_calibrator: FieldCalibrator,
+             fields: Dict[str, Field],
              world_to_screen: Callable[[float, float], Tuple[int, int]]) -> None:
         """
         Draw field boundaries overlay.
 
         Args:
             renderer: Renderer instance
-            field_calibrator: FieldCalibrator with registered fields
+            fields: Dictionary of field_name -> Field (use scene.get_fields_snapshot())
             world_to_screen: Function to convert world coords to screen coords
         """
-        for name, field in field_calibrator.fields.items():
+        for name, field in fields.items():
             self._draw_field(renderer, name, field, world_to_screen)
 
     def _draw_field(self, renderer: PygameRenderer,

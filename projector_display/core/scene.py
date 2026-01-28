@@ -49,6 +49,11 @@ class Scene:
         with self._lock:
             return dict(self._rigidbodies)
 
+    def get_fields_snapshot(self) -> Dict[str, 'Field']:
+        """Get a snapshot copy of fields for safe iteration."""
+        with self._lock:
+            return dict(self.field_calibrator.fields)
+
     # --- RigidBody Management ---
 
     def create_rigidbody(self, name: str, style: Optional[dict] = None,

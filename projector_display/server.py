@@ -425,10 +425,13 @@ class ProjectorDisplayServer:
         # Clear screen
         self.renderer.clear(self.background_color)
 
+        # Get fields snapshot for thread-safe iteration
+        fields_snapshot = self.scene.get_fields_snapshot()
+
         # Render field backgrounds (ADR-10) - before everything else
         self.background_renderer.render_field_backgrounds(
             self.renderer,
-            self.scene.field_calibrator.fields,
+            fields_snapshot,
             self.world_to_screen
         )
 
@@ -441,8 +444,7 @@ class ProjectorDisplayServer:
             self.grid_layer.draw(self.renderer, self.world_to_screen, self._world_bounds)
 
         if self.scene.field_layer_enabled:
-            self.field_layer.draw(self.renderer, self.scene.field_calibrator,
-                                  self.world_to_screen)
+            self.field_layer.draw(self.renderer, fields_snapshot, self.world_to_screen)
 
         # F1: Get snapshot for safe iteration (lock held briefly for copy only)
         rigidbodies_snapshot = self.scene.get_rigidbodies_snapshot()
