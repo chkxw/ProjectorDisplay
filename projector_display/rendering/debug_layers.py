@@ -6,9 +6,16 @@ Two togglable overlay layers for on-demand debugging:
 2. FieldLayer: Shows boundaries of all registered fields with labels
 """
 
+import math
 from typing import Callable, Dict, Tuple, List
 from projector_display.rendering.renderer import PygameRenderer
 from projector_display.core.field_calibrator import FieldCalibrator, Field
+
+
+# Grid colors (matching reference implementation)
+GRID_MAJOR_COLOR = (100, 100, 100)
+GRID_MINOR_COLOR = (50, 50, 50)
+LABEL_COLOR = (200, 200, 200)
 
 
 class GridLayer:
@@ -17,30 +24,25 @@ class GridLayer:
 
     Shows:
     - Thick lines every 1 meter
-    - Thin lines every 0.1 meter (optional)
-    - Origin marker and axis labels
+    - Thin lines every 0.1 meter
+    - Coordinate labels at each 1m intersection
+    - Origin marker
     """
 
     def __init__(self,
-                 major_spacing: float = 1.0,  # meters
-                 minor_spacing: float = 0.1,  # meters
-                 major_color: Tuple[int, int, int] = (100, 100, 100),
-                 minor_color: Tuple[int, int, int] = (50, 50, 50),
-                 label_color: Tuple[int, int, int] = (200, 200, 200),
-                 show_minor: bool = False):
+                 major_color: Tuple[int, int, int] = GRID_MAJOR_COLOR,
+                 minor_color: Tuple[int, int, int] = GRID_MINOR_COLOR,
+                 label_color: Tuple[int, int, int] = LABEL_COLOR,
+                 show_minor: bool = True):
         """
         Initialize grid layer.
 
         Args:
-            major_spacing: Spacing between major grid lines (meters)
-            minor_spacing: Spacing between minor grid lines (meters)
-            major_color: Color for major grid lines
-            minor_color: Color for minor grid lines
-            label_color: Color for axis labels
+            major_color: Color for major grid lines (1m)
+            minor_color: Color for minor grid lines (0.1m)
+            label_color: Color for coordinate labels
             show_minor: Whether to show minor grid lines
         """
-        self.major_spacing = major_spacing
-        self.minor_spacing = minor_spacing
         self.major_color = major_color
         self.minor_color = minor_color
         self.label_color = label_color
@@ -58,19 +60,92 @@ class GridLayer:
             world_bounds: (min_x, min_y, max_x, max_y) in world coordinates
         """
         min_x, min_y, max_x, max_y = world_bounds
+
+        # Extend to nearest meter for clean grid
+        grid_min_x = math.floor(min_x)
+        grid_max_x = math.ceil(max_x)
+        grid_min_y = math.floor(min_y)
+        grid_max_y = math.ceil(max_y)
+
+        # Draw minor grid lines (0.1m spacing)
+        if self.show_minor:
+            self._draw_minor_grid(renderer, world_to_screen,
+                                  grid_min_x, grid_max_x, grid_min_y, grid_max_y)
+
+        # Draw major grid lines (1.0m spacing)
+        self._draw_major_grid(renderer, world_to_screen,
+                              grid_min_x, grid_max_x, grid_min_y, grid_max_y)
+
+        # Draw coordinate labels at each 1m intersection
+        self._draw_labels(renderer, world_to_screen,
+                          grid_min_x, grid_max_x, grid_min_y, grid_max_y)
+
+        # Draw origin marker if visible
+        self._draw_origin_marker(renderer, world_to_screen)
+
+    def _draw_minor_grid(self, renderer: PygameRenderer,
+                         world_to_screen: Callable,
+                         grid_min_x: int, grid_max_x: int,
+                         grid_min_y: int, grid_max_y: int) -> None:
+        """Draw minor grid lines at 0.1m spacing."""
+        # Vertical lines (0.1m spacing, skip major lines)
+        for x_10 in range(grid_min_x * 10, grid_max_x * 10 + 1):
+            if x_10 % 10 == 0:  # Skip major lines
+                continue
+            x = x_10 / 10.0
+            p1 = world_to_screen(x, grid_min_y)
+            p2 = world_to_screen(x, grid_max_y)
+            renderer.draw_line(p1, p2, self.minor_color, 1)
+
+        # Horizontal lines (0.1m spacing, skip major lines)
+        for y_10 in range(grid_min_y * 10, grid_max_y * 10 + 1):
+            if y_10 % 10 == 0:  # Skip major lines
+                continue
+            y = y_10 / 10.0
+            p1 = world_to_screen(grid_min_x, y)
+            p2 = world_to_screen(grid_max_x, y)
+            renderer.draw_line(p1, p2, self.minor_color, 1)
+
+    def _draw_major_grid(self, renderer: PygameRenderer,
+                         world_to_screen: Callable,
+                         grid_min_x: int, grid_max_x: int,
+                         grid_min_y: int, grid_max_y: int) -> None:
+        """Draw major grid lines at 1.0m spacing."""
+        # Vertical lines (1m spacing)
+        for x in range(grid_min_x, grid_max_x + 1):
+            p1 = world_to_screen(x, grid_min_y)
+            p2 = world_to_screen(x, grid_max_y)
+            renderer.draw_line(p1, p2, self.major_color, 2)
+
+        # Horizontal lines (1m spacing)
+        for y in range(grid_min_y, grid_max_y + 1):
+            p1 = world_to_screen(grid_min_x, y)
+            p2 = world_to_screen(grid_max_x, y)
+            renderer.draw_line(p1, p2, self.major_color, 2)
+
+    def _draw_labels(self, renderer: PygameRenderer,
+                     world_to_screen: Callable,
+                     grid_min_x: int, grid_max_x: int,
+                     grid_min_y: int, grid_max_y: int) -> None:
+        """Draw coordinate labels at each 1m intersection."""
         screen_w, screen_h = renderer.get_size()
 
-        # Draw minor grid lines if enabled
-        if self.show_minor:
-            self._draw_grid_lines(renderer, world_to_screen, world_bounds,
-                                  self.minor_spacing, self.minor_color, 1)
+        for x in range(grid_min_x, grid_max_x + 1):
+            for y in range(grid_min_y, grid_max_y + 1):
+                pos = world_to_screen(x, y)
+                # Only draw if on screen
+                if 0 <= pos[0] < screen_w and 0 <= pos[1] < screen_h:
+                    label = f"({x},{y})"
+                    # Offset label slightly from intersection
+                    renderer.draw_text(label, (pos[0] + 25, pos[1] - 10),
+                                        self.label_color, 18)
 
-        # Draw major grid lines
-        self._draw_grid_lines(renderer, world_to_screen, world_bounds,
-                              self.major_spacing, self.major_color, 2)
-
-        # Draw origin marker
+    def _draw_origin_marker(self, renderer: PygameRenderer,
+                            world_to_screen: Callable) -> None:
+        """Draw origin marker if visible."""
+        screen_w, screen_h = renderer.get_size()
         origin_screen = world_to_screen(0, 0)
+
         if 0 <= origin_screen[0] < screen_w and 0 <= origin_screen[1] < screen_h:
             # Draw crosshair at origin
             renderer.draw_circle(origin_screen, 10, (255, 255, 0), 2)
@@ -80,55 +155,6 @@ class GridLayer:
             renderer.draw_line((origin_screen[0], origin_screen[1] - 15),
                                (origin_screen[0], origin_screen[1] + 15),
                                (255, 255, 0), 2)
-            renderer.draw_text("(0,0)", (origin_screen[0] + 20, origin_screen[1] - 20),
-                               self.label_color, 20)
-
-    def _draw_grid_lines(self, renderer: PygameRenderer,
-                         world_to_screen: Callable,
-                         world_bounds: Tuple[float, float, float, float],
-                         spacing: float,
-                         color: Tuple[int, int, int],
-                         thickness: int) -> None:
-        """Draw grid lines at specified spacing."""
-        min_x, min_y, max_x, max_y = world_bounds
-        screen_w, screen_h = renderer.get_size()
-
-        # Vertical lines (constant x)
-        x = (min_x // spacing) * spacing
-        while x <= max_x:
-            p1 = world_to_screen(x, min_y)
-            p2 = world_to_screen(x, max_y)
-
-            # Clip to screen bounds
-            if 0 <= p1[0] < screen_w or 0 <= p2[0] < screen_w:
-                renderer.draw_line(p1, p2, color, thickness)
-
-                # Label major lines
-                if thickness > 1 and abs(x) > 0.01:
-                    label_pos = world_to_screen(x, min_y)
-                    if 0 <= label_pos[0] < screen_w and 0 <= label_pos[1] < screen_h:
-                        renderer.draw_text(f"{x:.1f}", (label_pos[0], label_pos[1] - 15),
-                                           self.label_color, 16)
-
-            x += spacing
-
-        # Horizontal lines (constant y)
-        y = (min_y // spacing) * spacing
-        while y <= max_y:
-            p1 = world_to_screen(min_x, y)
-            p2 = world_to_screen(max_x, y)
-
-            if 0 <= p1[1] < screen_h or 0 <= p2[1] < screen_h:
-                renderer.draw_line(p1, p2, color, thickness)
-
-                # Label major lines
-                if thickness > 1 and abs(y) > 0.01:
-                    label_pos = world_to_screen(min_x, y)
-                    if 0 <= label_pos[0] < screen_w and 0 <= label_pos[1] < screen_h:
-                        renderer.draw_text(f"{y:.1f}", (label_pos[0] + 15, label_pos[1]),
-                                           self.label_color, 16)
-
-            y += spacing
 
 
 class FieldLayer:
