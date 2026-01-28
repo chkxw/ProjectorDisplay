@@ -130,7 +130,7 @@ def status(scene) -> dict:
     Returns:
         Response with server status information
     """
-    return {
+    result = {
         "status": "success",
         "rigidbodies": scene.list_rigidbodies(),
         "rigidbody_count": len(scene.rigidbodies),
@@ -139,6 +139,18 @@ def status(scene) -> dict:
         "grid_layer_enabled": scene.grid_layer_enabled,
         "field_layer_enabled": scene.field_layer_enabled,
     }
+
+    # Add MoCap status if tracker is available
+    tracker = getattr(scene, '_mocap_tracker', None)
+    if tracker is not None:
+        mocap_status = tracker.get_status()
+        result["mocap"] = {
+            "enabled": mocap_status.get("enabled", False),
+            "connected": mocap_status.get("connected", False),
+            "server": mocap_status.get("server"),
+        }
+
+    return result
 
 
 # ============================================================================
