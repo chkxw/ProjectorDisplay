@@ -24,8 +24,9 @@ class Field:
     world_points: np.ndarray  # 4x2 array of world points (meters)
     local_points: np.ndarray  # 4x2 array of local rectangle points
 
-    # Background image support (ADR-10)
+    # Background support (ADR-10)
     background_image: Optional[str] = None  # Filename of background image
+    background_color: Optional[Tuple[int, int, int]] = None  # Solid color RGB
     background_alpha: int = 255  # Opacity (0-255)
 
     def __post_init__(self):

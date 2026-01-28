@@ -11,6 +11,7 @@ import logging
 from typing import List, Optional
 from projector_display.commands.base import register_command
 from projector_display.storage import get_storage_manager
+from projector_display.utils.color import parse_color
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ def set_field_background(scene, field: str, image: str, alpha: int = 255) -> dic
 @register_command
 def remove_field_background(scene, field: str) -> dict:
     """
-    Clear the background from a field.
+    Clear the background (image or color) from a field.
 
     Args:
         scene: Scene instance
@@ -179,10 +180,14 @@ def remove_field_background(scene, field: str) -> dict:
         return {"status": "error", "message": f"Field '{field}' not found"}
 
     # Check if field has a background
-    had_background = hasattr(field_obj, 'background_image') and field_obj.background_image
+    had_background = (
+        (hasattr(field_obj, 'background_image') and field_obj.background_image) or
+        (hasattr(field_obj, 'background_color') and field_obj.background_color)
+    )
 
     # Clear background properties
     field_obj.background_image = None
+    field_obj.background_color = None
     field_obj.background_alpha = 255
 
     if had_background:
@@ -196,3 +201,49 @@ def remove_field_background(scene, field: str) -> dict:
             "status": "success",
             "message": f"Field '{field}' had no background"
         }
+
+
+@register_command
+def set_field_background_color(scene, field: str, color, alpha: int = 255) -> dict:
+    """
+    Set a solid color background for a field.
+
+    Args:
+        scene: Scene instance
+        field: Field name to set background for
+        color: Color (hex string, RGB list, or RGBA list)
+        alpha: Opacity (0-255, default 255 = fully opaque)
+
+    Returns:
+        Response with status
+    """
+    # Validate field exists
+    field_obj = scene.get_field(field)
+    if field_obj is None:
+        return {"status": "error", "message": f"Field '{field}' not found"}
+
+    # Parse color
+    try:
+        rgba = parse_color(color)
+        rgb = rgba[:3]
+    except ValueError as e:
+        return {"status": "error", "message": f"Invalid color: {e}"}
+
+    # Validate alpha
+    if not 0 <= alpha <= 255:
+        return {"status": "error", "message": f"Alpha must be 0-255, got {alpha}"}
+
+    # Set background properties (color takes precedence over image)
+    field_obj.background_color = rgb
+    field_obj.background_image = None  # Clear image if any
+    field_obj.background_alpha = alpha
+
+    logger.info(f"Set background color for field '{field}': {rgb} (alpha={alpha})")
+
+    return {
+        "status": "success",
+        "message": f"Set background color on field '{field}'",
+        "field": field,
+        "color": list(rgb),
+        "alpha": alpha
+    }

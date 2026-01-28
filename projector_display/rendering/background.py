@@ -128,7 +128,7 @@ class BackgroundRenderer:
     def render_field_backgrounds(self, renderer, fields: Dict[str, Field],
                                  world_to_screen: Callable[[float, float], Tuple[int, int]]):
         """
-        Render background images for all fields that have them.
+        Render background images or solid colors for all fields that have them.
 
         Args:
             renderer: PygameRenderer instance
@@ -139,6 +139,21 @@ class BackgroundRenderer:
         images_dir = storage.get_session_images_dir()
 
         for field_name, field in fields.items():
+            # Handle solid color background
+            if field.background_color is not None:
+                screen_points = [
+                    world_to_screen(pt[0], pt[1])
+                    for pt in field.world_points
+                ]
+                if field.background_alpha < 255:
+                    renderer.draw_polygon_alpha(
+                        screen_points, field.background_color,
+                        field.background_alpha
+                    )
+                else:
+                    renderer.draw_polygon(screen_points, field.background_color)
+                continue
+
             if not field.background_image:
                 continue
 
