@@ -260,17 +260,24 @@ class ProjectorDisplayServer:
         if not world_points or not local_points:
             raise ValueError("Missing screen_field.world_points/local_points")
 
-        # 3. Clear all fields (removes user fields + old screen)
-        self.scene.field_calibrator.fields.clear()
-        self.scene.field_calibrator.transform_matrix.clear()
-        self.scene.field_calibrator.transform_matrix["base"] = {}
-
-        # 4. Register new screen field
-        self.scene.field_calibrator.register_field(
+        # 3. Register new screen field first (replaces existing atomically,
+        #    so the render thread always sees a valid "screen" field)
+        fc = self.scene.field_calibrator
+        fc.register_field(
             "screen",
             np.array(world_points, dtype=np.float32),
             np.array(local_points, dtype=np.float32)
         )
+
+        # 4. Remove all non-screen fields individually (thread-safe:
+        #    "screen" and its transforms remain valid throughout)
+        non_screen = [name for name in fc.fields if name != "screen"]
+        for name in non_screen:
+            del fc.fields[name]
+            fc.transform_matrix.pop(name, None)
+            fc.transform_matrix["base"].pop(name, None)
+            if "screen" in fc.transform_matrix:
+                fc.transform_matrix["screen"].pop(name, None)
 
         # 5. Update world bounds
         world_pts = np.array(world_points)
