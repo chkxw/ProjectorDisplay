@@ -40,8 +40,8 @@ class Scene:
 
         # Grid layer settings
         self.grid_show_minor: bool = True
-        self.grid_major_color: tuple = (100, 100, 100)
-        self.grid_minor_color: tuple = (50, 50, 50)
+        self.grid_major_color: tuple = (100, 100, 100, 255)
+        self.grid_minor_color: tuple = (50, 50, 50, 255)
 
     @property
     def rigidbodies(self) -> Dict[str, RigidBody]:

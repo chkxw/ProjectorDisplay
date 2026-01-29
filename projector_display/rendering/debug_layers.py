@@ -12,9 +12,9 @@ from projector_display.rendering.renderer import PygameRenderer
 from projector_display.core.field_calibrator import Field
 
 
-# Grid colors (matching reference implementation)
-GRID_MAJOR_COLOR = (100, 100, 100)
-GRID_MINOR_COLOR = (50, 50, 50)
+# Grid colors (RGBA, matching reference implementation)
+GRID_MAJOR_COLOR = (100, 100, 100, 255)
+GRID_MINOR_COLOR = (50, 50, 50, 255)
 
 
 class GridLayer:
@@ -29,15 +29,15 @@ class GridLayer:
     """
 
     def __init__(self,
-                 major_color: Tuple[int, int, int] = GRID_MAJOR_COLOR,
-                 minor_color: Tuple[int, int, int] = GRID_MINOR_COLOR,
+                 major_color: Tuple[int, ...] = GRID_MAJOR_COLOR,
+                 minor_color: Tuple[int, ...] = GRID_MINOR_COLOR,
                  show_minor: bool = True):
         """
         Initialize grid layer.
 
         Args:
-            major_color: Color for major grid lines and labels (1m)
-            minor_color: Color for minor grid lines (0.1m)
+            major_color: RGBA color for major grid lines and labels (1m)
+            minor_color: RGBA color for minor grid lines (0.1m)
             show_minor: Whether to show minor grid lines
         """
         self.major_color = major_color
@@ -49,6 +49,9 @@ class GridLayer:
              world_bounds: Tuple[float, float, float, float]) -> None:
         """
         Draw grid overlay.
+
+        Collects all grid lines into a batch and renders in a single blit
+        for efficient alpha support.
 
         Args:
             renderer: Renderer instance
@@ -63,14 +66,19 @@ class GridLayer:
         grid_min_y = math.floor(min_y)
         grid_max_y = math.ceil(max_y)
 
-        # Draw minor grid lines (0.1m spacing)
+        # Collect all grid lines into a batch: (start, end, color_rgba, width)
+        lines = []
+
         if self.show_minor:
-            self._draw_minor_grid(renderer, world_to_screen,
+            self._collect_minor_lines(lines, world_to_screen,
+                                      grid_min_x, grid_max_x, grid_min_y, grid_max_y)
+
+        self._collect_major_lines(lines, world_to_screen,
                                   grid_min_x, grid_max_x, grid_min_y, grid_max_y)
 
-        # Draw major grid lines (1.0m spacing)
-        self._draw_major_grid(renderer, world_to_screen,
-                              grid_min_x, grid_max_x, grid_min_y, grid_max_y)
+        # Draw all grid lines in a single blit
+        if lines:
+            renderer.draw_line_batch(lines)
 
         # Draw coordinate labels at each 1m intersection
         self._draw_labels(renderer, world_to_screen,
@@ -79,45 +87,47 @@ class GridLayer:
         # Draw origin marker if visible
         self._draw_origin_marker(renderer, world_to_screen)
 
-    def _draw_minor_grid(self, renderer: PygameRenderer,
-                         world_to_screen: Callable,
-                         grid_min_x: int, grid_max_x: int,
-                         grid_min_y: int, grid_max_y: int) -> None:
-        """Draw minor grid lines at 0.1m spacing."""
+    def _collect_minor_lines(self, lines: List,
+                             world_to_screen: Callable,
+                             grid_min_x: int, grid_max_x: int,
+                             grid_min_y: int, grid_max_y: int) -> None:
+        """Collect minor grid lines at 0.1m spacing into batch."""
+        color = self.minor_color
         # Vertical lines (0.1m spacing, skip major lines)
         for x_10 in range(grid_min_x * 10, grid_max_x * 10 + 1):
-            if x_10 % 10 == 0:  # Skip major lines
+            if x_10 % 10 == 0:
                 continue
             x = x_10 / 10.0
             p1 = world_to_screen(x, grid_min_y)
             p2 = world_to_screen(x, grid_max_y)
-            renderer.draw_line(p1, p2, self.minor_color, 1)
+            lines.append((p1, p2, color, 1))
 
         # Horizontal lines (0.1m spacing, skip major lines)
         for y_10 in range(grid_min_y * 10, grid_max_y * 10 + 1):
-            if y_10 % 10 == 0:  # Skip major lines
+            if y_10 % 10 == 0:
                 continue
             y = y_10 / 10.0
             p1 = world_to_screen(grid_min_x, y)
             p2 = world_to_screen(grid_max_x, y)
-            renderer.draw_line(p1, p2, self.minor_color, 1)
+            lines.append((p1, p2, color, 1))
 
-    def _draw_major_grid(self, renderer: PygameRenderer,
-                         world_to_screen: Callable,
-                         grid_min_x: int, grid_max_x: int,
-                         grid_min_y: int, grid_max_y: int) -> None:
-        """Draw major grid lines at 1.0m spacing."""
+    def _collect_major_lines(self, lines: List,
+                             world_to_screen: Callable,
+                             grid_min_x: int, grid_max_x: int,
+                             grid_min_y: int, grid_max_y: int) -> None:
+        """Collect major grid lines at 1.0m spacing into batch."""
+        color = self.major_color
         # Vertical lines (1m spacing)
         for x in range(grid_min_x, grid_max_x + 1):
             p1 = world_to_screen(x, grid_min_y)
             p2 = world_to_screen(x, grid_max_y)
-            renderer.draw_line(p1, p2, self.major_color, 2)
+            lines.append((p1, p2, color, 2))
 
         # Horizontal lines (1m spacing)
         for y in range(grid_min_y, grid_max_y + 1):
             p1 = world_to_screen(grid_min_x, y)
             p2 = world_to_screen(grid_max_x, y)
-            renderer.draw_line(p1, p2, self.major_color, 2)
+            lines.append((p1, p2, color, 2))
 
     def _draw_labels(self, renderer: PygameRenderer,
                      world_to_screen: Callable,
@@ -134,7 +144,7 @@ class GridLayer:
                     label = f"({x},{y})"
                     # Offset label slightly from intersection
                     renderer.draw_text(label, (pos[0] + 25, pos[1] - 10),
-                                        self.major_color, 18)
+                                        self.major_color[:3], 18)
 
     def _draw_origin_marker(self, renderer: PygameRenderer,
                             world_to_screen: Callable) -> None:

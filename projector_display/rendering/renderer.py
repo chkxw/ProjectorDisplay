@@ -152,6 +152,11 @@ class Renderer(Protocol):
         """Draw a rectangle. rect=(x, y, width, height). border=0 means filled."""
         ...
 
+    def draw_line_batch(self, lines: List[Tuple[Tuple[int, int], Tuple[int, int],
+                                                Tuple[int, ...], int]]) -> None:
+        """Draw many lines in a single blit. Each line is (start, end, color_rgba, width)."""
+        ...
+
     def draw_text(self, text: str, position: Tuple[int, int],
                   color: Tuple[int, int, int], font_size: int = 24,
                   background: Optional[Tuple[int, int, int]] = None,
@@ -329,6 +334,55 @@ class PygameRenderer:
 
         line_color = (*color[:3], alpha)
         pygame.draw.line(temp_surface, line_color, local_start, local_end, width)
+
+        self.screen.blit(temp_surface, (min_x - 1, min_y - 1))
+
+    def draw_line_batch(self, lines: List[Tuple[Tuple[int, int], Tuple[int, int],
+                                                Tuple[int, ...], int]]) -> None:
+        """
+        Draw many lines in a single blit. Supports RGBA colors.
+
+        Each line is (start, end, color, width) where color is RGB or RGBA.
+        When any color has alpha < 255, all lines are drawn onto one temporary
+        SRCALPHA surface and blitted once. Fully opaque batches use direct draws.
+
+        Args:
+            lines: List of (start, end, color, width) tuples
+        """
+        if not self.screen or not lines:
+            return
+
+        # Check if any line needs alpha
+        needs_alpha = any(len(c) >= 4 and c[3] < 255 for _, _, c, _ in lines)
+
+        if not needs_alpha:
+            for start, end, color, width in lines:
+                pygame.draw.line(self.screen, color[:3], start, end, width)
+            return
+
+        # Compute bounding box of all lines
+        all_x = []
+        all_y = []
+        max_width = 0
+        for start, end, _, width in lines:
+            all_x.extend([start[0], end[0]])
+            all_y.extend([start[1], end[1]])
+            max_width = max(max_width, width)
+
+        min_x = min(all_x) - max_width
+        max_x = max(all_x) + max_width
+        min_y = min(all_y) - max_width
+        max_y = max(all_y) + max_width
+        surf_w = max(1, max_x - min_x + 2)
+        surf_h = max(1, max_y - min_y + 2)
+
+        temp_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+
+        for start, end, color, width in lines:
+            rgba = (*color[:3], color[3] if len(color) >= 4 else 255)
+            local_start = (start[0] - min_x + 1, start[1] - min_y + 1)
+            local_end = (end[0] - min_x + 1, end[1] - min_y + 1)
+            pygame.draw.line(temp_surface, rgba, local_start, local_end, width)
 
         self.screen.blit(temp_surface, (min_x - 1, min_y - 1))
 

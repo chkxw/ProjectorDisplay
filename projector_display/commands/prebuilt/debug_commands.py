@@ -102,13 +102,13 @@ def configure_grid_layer(scene,
 
     if major_color is not None:
         try:
-            scene.grid_major_color = parse_color(major_color)[:3]  # RGB only for grid
+            scene.grid_major_color = parse_color(major_color)
         except ValueError as e:
             return {"status": "error", "message": f"Invalid major_color: {e}"}
 
     if minor_color is not None:
         try:
-            scene.grid_minor_color = parse_color(minor_color)[:3]  # RGB only for grid
+            scene.grid_minor_color = parse_color(minor_color)
         except ValueError as e:
             return {"status": "error", "message": f"Invalid minor_color: {e}"}
 
