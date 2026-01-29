@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple, Optional, Union, Any
 from dataclasses import dataclass, field
 from collections import deque
 from enum import Enum
+import threading
 import time
 
 from projector_display.utils.color import normalize_color, parse_color
@@ -149,11 +150,13 @@ class RigidBody:
     # F7: Made configurable via set_history_maxlen() or at creation time
     position_history: deque = field(default_factory=lambda: deque(maxlen=DEFAULT_POSITION_HISTORY_MAXLEN), repr=False)
     last_update_time: float = 0
+    _history_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def set_history_maxlen(self, maxlen: int):
         """Set maximum length for position history. Existing entries are preserved up to new limit."""
-        old_history = list(self.position_history)
-        self.position_history = deque(old_history, maxlen=maxlen)
+        with self._history_lock:
+            old_history = list(self.position_history)
+            self.position_history = deque(old_history, maxlen=maxlen)
 
     def update_position(self, x: float, y: float, orientation: Optional[float] = None):
         """
@@ -173,12 +176,13 @@ class RigidBody:
         else:
             self.orientation = None
 
-        # Add to position history
-        self.position_history.append({
-            'position': self.position,
-            'orientation': self.get_effective_orientation(),
-            'time': current_time,
-        })
+        # Add to position history (thread-safe)
+        with self._history_lock:
+            self.position_history.append({
+                'position': self.position,
+                'orientation': self.get_effective_orientation(),
+                'time': current_time,
+            })
 
         self.last_update_time = current_time
 
@@ -203,10 +207,14 @@ class RigidBody:
         current_time = time.time()
         points = []
 
+        # Take snapshot under lock for thread-safety
+        with self._history_lock:
+            history_list = list(self.position_history)
+
         if self.trajectory_style.mode == "time":
             # Time-based: show all positions from last N seconds
             cutoff_time = current_time - self.trajectory_style.length
-            for entry in self.position_history:
+            for entry in history_list:
                 if entry['time'] >= cutoff_time:
                     points.append(entry['position'])
         else:
@@ -215,7 +223,6 @@ class RigidBody:
             total_distance = 0.0
 
             # Iterate backwards from most recent
-            history_list = list(self.position_history)
             for i in range(len(history_list) - 1, 0, -1):
                 p1 = history_list[i]['position']
                 p2 = history_list[i - 1]['position']
@@ -245,7 +252,8 @@ class RigidBody:
 
     def clear_history(self):
         """Clear position history."""
-        self.position_history.clear()
+        with self._history_lock:
+            self.position_history.clear()
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
