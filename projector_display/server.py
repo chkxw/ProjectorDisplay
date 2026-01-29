@@ -49,6 +49,18 @@ DEFAULT_UPDATE_RATE = 30  # Hz
 DEFAULT_BACKGROUND_COLOR = (0, 0, 0)  # Black
 
 
+class _CalibrationDumper(yaml.SafeDumper):
+    """YAML dumper that uses flow style for lists of scalars (e.g. coordinate pairs)."""
+    pass
+
+
+def _represent_list(dumper, data):
+    flow = all(isinstance(item, (int, float)) for item in data)
+    return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=flow)
+
+_CalibrationDumper.add_representer(list, _represent_list)
+
+
 class ProjectorDisplayServer:
     """
     Display server for projector-based robot experiment visualization.
@@ -291,7 +303,7 @@ class ProjectorDisplayServer:
         # 6. Write to calibration file if requested
         if write_to_disk and self.calibration_path:
             with open(self.calibration_path, 'w') as f:
-                yaml.safe_dump(calib_data, f, default_flow_style=False, sort_keys=False)
+                yaml.dump(calib_data, f, Dumper=_CalibrationDumper, sort_keys=False)
 
         self.logger.info(f"Screen field registered. World bounds: {self._world_bounds}")
 
