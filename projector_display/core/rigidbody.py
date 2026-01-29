@@ -9,7 +9,6 @@ from typing import Dict, List, Tuple, Optional, Union, Any
 from dataclasses import dataclass, field
 from collections import deque
 from enum import Enum
-import threading
 import time
 
 from projector_display.utils.color import normalize_color, parse_color
@@ -137,30 +136,41 @@ class RigidBody:
 
     RigidBody is the first-class displayable entity - supports robots, payloads,
     any tracked object.
+
+    Position sources:
+        - Manual: position/orientation set via commands (persistent)
+        - MoCap:  _mocap_position/_mocap_orientation set by tracker (runtime)
+        When auto_track is True, MoCap source takes priority for display.
     """
     name: str
-    position: Optional[Tuple[float, float]] = None  # Current position in world coords
-    orientation: Optional[float] = None  # Current orientation in radians
+
+    # Persistent state - manual position (saved/loaded with scene)
+    position: Optional[Tuple[float, float]] = None  # Manual position in world coords
+    orientation: Optional[float] = None  # Manual orientation in radians
+
     _last_orientation: float = field(default=0.0, repr=False)  # Internal fallback for missing orientation
     mocap_name: Optional[str] = None  # Name in MoCap system (optional)
     auto_track: bool = False  # Auto-update position from MoCap when enabled
+
+    # Runtime state - MoCap driven (not persisted, resets on reconnect)
+    _mocap_position: Optional[Tuple[float, float]] = field(default=None, repr=False)
+    _mocap_orientation: Optional[float] = field(default=None, repr=False)
     tracking_lost: bool = False  # True when MoCap tracking is lost
+
     style: RigidBodyStyle = field(default_factory=RigidBodyStyle)
     trajectory_style: TrajectoryStyle = field(default_factory=TrajectoryStyle)
     # F7: Made configurable via set_history_maxlen() or at creation time
     position_history: deque = field(default_factory=lambda: deque(maxlen=DEFAULT_POSITION_HISTORY_MAXLEN), repr=False)
     last_update_time: float = 0
-    _history_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def set_history_maxlen(self, maxlen: int):
         """Set maximum length for position history. Existing entries are preserved up to new limit."""
-        with self._history_lock:
-            old_history = list(self.position_history)
-            self.position_history = deque(old_history, maxlen=maxlen)
+        old_history = list(self.position_history)
+        self.position_history = deque(old_history, maxlen=maxlen)
 
     def update_position(self, x: float, y: float, orientation: Optional[float] = None):
         """
-        Update rigid body position and orientation.
+        Update manual position and orientation.
 
         Args:
             x: X position in world coordinates (meters)
@@ -168,31 +178,66 @@ class RigidBody:
             orientation: Orientation in radians (optional)
         """
         self.position = (x, y)
-        current_time = time.time()
-
         if orientation is not None:
             self.orientation = orientation
             self._last_orientation = orientation
         else:
             self.orientation = None
 
-        # Add to position history (thread-safe)
-        with self._history_lock:
-            self.position_history.append({
-                'position': self.position,
-                'orientation': self.get_effective_orientation(),
-                'time': current_time,
-            })
+        self._record_history()
 
+    def update_mocap_position(self, x: float, y: float, orientation: Optional[float] = None):
+        """
+        Update MoCap-driven position and orientation (runtime state).
+
+        Args:
+            x: X position in world coordinates (meters)
+            y: Y position in world coordinates (meters)
+            orientation: Orientation in radians (optional)
+        """
+        self._mocap_position = (x, y)
+        if orientation is not None:
+            self._mocap_orientation = orientation
+            self._last_orientation = orientation
+        else:
+            self._mocap_orientation = None
+
+        self._record_history()
+
+    def _record_history(self):
+        """Record current display position to history."""
+        current_time = time.time()
+        display_pos = self.get_display_position()
+        if display_pos is None:
+            return
+
+        self.position_history.append({
+            'position': display_pos,
+            'orientation': self.get_effective_orientation(),
+            'time': current_time,
+        })
         self.last_update_time = current_time
+
+    def get_display_position(self) -> Optional[Tuple[float, float]]:
+        """Get position for rendering. MoCap takes priority when auto_track enabled."""
+        if self.auto_track and self._mocap_position is not None:
+            return self._mocap_position
+        return self.position
+
+    def get_display_orientation(self) -> Optional[float]:
+        """Get orientation for rendering. MoCap takes priority when auto_track enabled."""
+        if self.auto_track and self._mocap_orientation is not None:
+            return self._mocap_orientation
+        return self.orientation
 
     def get_effective_orientation(self) -> float:
         """
-        Return orientation for rendering.
+        Return best-available orientation for rendering.
 
-        If current orientation is None, uses last known orientation.
+        Uses display orientation if available, otherwise last known.
         """
-        return self.orientation if self.orientation is not None else self._last_orientation
+        display = self.get_display_orientation()
+        return display if display is not None else self._last_orientation
 
     def get_trajectory_points(self) -> List[Tuple[float, float]]:
         """
@@ -207,14 +252,10 @@ class RigidBody:
         current_time = time.time()
         points = []
 
-        # Take snapshot under lock for thread-safety
-        with self._history_lock:
-            history_list = list(self.position_history)
-
         if self.trajectory_style.mode == "time":
             # Time-based: show all positions from last N seconds
             cutoff_time = current_time - self.trajectory_style.length
-            for entry in history_list:
+            for entry in self.position_history:
                 if entry['time'] >= cutoff_time:
                     points.append(entry['position'])
         else:
@@ -223,6 +264,7 @@ class RigidBody:
             total_distance = 0.0
 
             # Iterate backwards from most recent
+            history_list = list(self.position_history)
             for i in range(len(history_list) - 1, 0, -1):
                 p1 = history_list[i]['position']
                 p2 = history_list[i - 1]['position']
@@ -252,12 +294,19 @@ class RigidBody:
 
     def clear_history(self):
         """Clear position history."""
-        with self._history_lock:
-            self.position_history.clear()
+        self.position_history.clear()
 
-    def to_dict(self) -> dict:
-        """Convert to dictionary for serialization."""
-        return {
+    def to_dict(self, include_runtime: bool = False) -> dict:
+        """Convert to dictionary.
+
+        Args:
+            include_runtime: If True, include transient runtime state
+                (tracking_lost, etc.) for API responses.
+                If False (default), only include persistent config
+                for scene save/load.
+        """
+        # Persistent config - restored on scene load
+        data = {
             'name': self.name,
             'position': list(self.position) if self.position else None,
             'orientation': self.orientation,
@@ -266,6 +315,16 @@ class RigidBody:
             'style': self.style.to_dict(),
             'trajectory': self.trajectory_style.to_dict(),
         }
+
+        # Transient runtime state - not persisted, resets on reconnect
+        if include_runtime:
+            data['tracking_lost'] = self.tracking_lost
+            data['mocap_position'] = list(self._mocap_position) if self._mocap_position else None
+            data['mocap_orientation'] = self._mocap_orientation
+            data['display_position'] = list(self.get_display_position()) if self.get_display_position() else None
+            data['display_orientation'] = self.get_display_orientation()
+
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "RigidBody":

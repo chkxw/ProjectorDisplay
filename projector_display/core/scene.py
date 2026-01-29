@@ -123,7 +123,7 @@ class Scene:
     def update_position(self, name: str, x: float, y: float,
                         orientation: Optional[float] = None) -> bool:
         """
-        Update rigid body position.
+        Update rigid body manual position.
 
         Args:
             name: Rigid body name
@@ -139,6 +139,27 @@ class Scene:
             if rb is None:
                 return False
             rb.update_position(x, y, orientation)
+            return True
+
+    def update_mocap_position(self, name: str, x: float, y: float,
+                              orientation: Optional[float] = None) -> bool:
+        """
+        Update rigid body MoCap-driven position (runtime state).
+
+        Args:
+            name: Rigid body name
+            x: X position in world coordinates (meters)
+            y: Y position in world coordinates (meters)
+            orientation: Orientation in radians (optional)
+
+        Returns:
+            True if updated, False if rigid body not found
+        """
+        with self._lock:
+            rb = self._rigidbodies.get(name)
+            if rb is None:
+                return False
+            rb.update_mocap_position(x, y, orientation)
             return True
 
     def set_rigidbody_tracking(self, name: str, mocap_name: Optional[str] = None,

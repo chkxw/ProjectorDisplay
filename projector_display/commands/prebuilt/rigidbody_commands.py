@@ -200,7 +200,7 @@ def get_rigidbody(scene, name: str) -> dict:
 
     return {
         "status": "success",
-        "rigidbody": rb.to_dict()
+        "rigidbody": rb.to_dict(include_runtime=True)
     }
 
 

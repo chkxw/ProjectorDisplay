@@ -134,9 +134,16 @@ class ProjectorDisplayServer:
             self._running.clear()
 
     def _signal_handler(self, signum, frame):
-        """Handle shutdown signals gracefully."""
+        """Handle shutdown signals. Second signal forces immediate exit."""
         signal_names = {signal.SIGTERM: "SIGTERM", signal.SIGINT: "SIGINT (Ctrl+C)"}
         signal_name = signal_names.get(signum, f"signal {signum}")
+
+        if not self._running.is_set():
+            # Already shutting down, force exit
+            self.logger.info(f"Force exit: Received {signal_name} during shutdown")
+            import os
+            os._exit(1)
+
         self.logger.info(f"Shutdown initiated: Received {signal_name}")
         self._running.clear()  # Thread-safe shutdown
 
@@ -451,31 +458,33 @@ class ProjectorDisplayServer:
 
         # Draw rigid bodies
         for name, rb in rigidbodies_snapshot.items():
-            if rb.position is None:
+            display_pos = rb.get_display_position()
+            if display_pos is None:
                 continue
 
             # Convert position to screen coords
-            screen_pos = self.world_to_screen(rb.position[0], rb.position[1])
+            screen_pos = self.world_to_screen(display_pos[0], display_pos[1])
             screen_size = self.meters_to_pixels(rb.style.size)
 
             # Get screen orientation
             screen_orientation = None
             orientation_end = None
 
-            if rb.orientation is not None or rb._last_orientation != 0:
+            display_orient = rb.get_display_orientation()
+            if display_orient is not None or rb._last_orientation != 0:
                 effective_orientation = rb.get_effective_orientation()
 
                 # Transform orientation via two-point method
                 if "screen" in self.scene.field_calibrator.fields:
                     screen_orientation = self.scene.field_calibrator.transform_orientation(
-                        "screen", rb.position, effective_orientation
+                        "screen", display_pos, effective_orientation
                     )
 
                     # Calculate arrow end point
                     arrow_len_world = rb.style.orientation_length
                     world_end = (
-                        rb.position[0] + math.cos(effective_orientation) * arrow_len_world,
-                        rb.position[1] + math.sin(effective_orientation) * arrow_len_world
+                        display_pos[0] + math.cos(effective_orientation) * arrow_len_world,
+                        display_pos[1] + math.sin(effective_orientation) * arrow_len_world
                     )
                     orientation_end = self.world_to_screen(world_end[0], world_end[1])
                 else:

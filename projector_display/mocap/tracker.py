@@ -271,14 +271,23 @@ class MocapTracker:
             }
 
     def _disconnect(self):
-        """Disconnect from MoCap server (internal)."""
+        """Disconnect from MoCap server (internal). Timeout prevents hang on stuck NatNet."""
         if self._mocap:
-            try:
-                self._mocap.disconnect()
-            except Exception as e:
-                logger.warning(f"Error disconnecting from MoCap: {e}")
+            # Run disconnect in thread with timeout to avoid blocking shutdown
+            disconnect_thread = threading.Thread(target=self._do_disconnect, daemon=True)
+            disconnect_thread.start()
+            disconnect_thread.join(timeout=3.0)
+            if disconnect_thread.is_alive():
+                logger.warning("MoCap disconnect timed out (3s), forcing cleanup")
             self._mocap = None
         self._connected = False
+
+    def _do_disconnect(self):
+        """Attempt MoCap disconnect (may block)."""
+        try:
+            self._mocap.disconnect()
+        except Exception as e:
+            logger.warning(f"Error disconnecting from MoCap: {e}")
 
     def _start_polling(self):
         """Start background polling thread (internal, must hold lock)."""
@@ -354,21 +363,27 @@ class MocapTracker:
                     logger.info(f"MoCap body '{rb.mocap_name}' now available")
                     self._missing_bodies.discard(rb.mocap_name)
 
+                # Check tracking status (MoCap returns stale position when lost)
+                tracking_ok = self._mocap.get_tracking_status(rb.mocap_name)
+                if tracking_ok is False:
+                    self._scene.set_tracking_lost(rb.name, True)
+                    # Still update position (stale but useful for display)
+                else:
+                    self._scene.set_tracking_lost(rb.name, False)
+
                 # Get orientation from MoCap (quaternion) -> convert to yaw
                 quat = self._mocap.get_quat(rb.mocap_name)
                 orientation = None
                 if quat is not None:
                     orientation = _quaternion_to_yaw(quat)
 
-                # Update rigidbody position (thread-safe via scene lock)
-                self._scene.update_position(
+                # Update MoCap position (runtime state, separate from manual position)
+                self._scene.update_mocap_position(
                     rb.name,
                     x=pos[0],
                     y=pos[1],
                     orientation=orientation
                 )
-                # Mark as tracking OK
-                self._scene.set_tracking_lost(rb.name, False)
 
             except Exception as e:
                 logger.debug(f"Failed to update {rb.name} from MoCap: {e}")
