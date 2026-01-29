@@ -154,8 +154,9 @@ class Renderer(Protocol):
 
     def draw_text(self, text: str, position: Tuple[int, int],
                   color: Tuple[int, int, int], font_size: int = 24,
-                  background: Optional[Tuple[int, int, int]] = None) -> None:
-        """Draw text at position."""
+                  background: Optional[Tuple[int, int, int]] = None,
+                  angle: float = 0.0) -> None:
+        """Draw text at position. angle in degrees, counter-clockwise."""
         ...
 
     def flip(self) -> None:
@@ -250,8 +251,9 @@ class PygameRenderer:
 
     def draw_text(self, text: str, position: Tuple[int, int],
                   color: Tuple[int, int, int], font_size: int = 24,
-                  background: Optional[Tuple[int, int, int]] = None) -> None:
-        """Draw text at position."""
+                  background: Optional[Tuple[int, int, int]] = None,
+                  angle: float = 0.0) -> None:
+        """Draw text at position. angle in degrees, counter-clockwise."""
         if not self.screen:
             return
 
@@ -261,12 +263,19 @@ class PygameRenderer:
 
         font = self._fonts[font_size]
         text_surface = font.render(text, True, color)
-        text_rect = text_surface.get_rect(center=position)
 
-        # Draw background if specified
         if background:
-            pygame.draw.rect(self.screen, background, text_rect.inflate(4, 2))
+            # Create background surface with padding
+            bg_rect = text_surface.get_rect().inflate(4, 2)
+            bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
+            bg_surface.fill((*background, 255))
+            bg_surface.blit(text_surface, (2, 1))
+            text_surface = bg_surface
 
+        if angle != 0.0:
+            text_surface = pygame.transform.rotate(text_surface, angle)
+
+        text_rect = text_surface.get_rect(center=position)
         self.screen.blit(text_surface, text_rect)
 
     def draw_polygon_alpha(self, points: List[Tuple[int, int]],

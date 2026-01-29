@@ -220,10 +220,45 @@ class FieldLayer:
             renderer.draw_text(label, (point[0] + 10, point[1] - 10),
                                self.corner_color, 16)
 
-        # Calculate center for field name label
-        center_x = sum(p[0] for p in screen_points) // len(screen_points)
-        center_y = sum(p[1] for p in screen_points) // len(screen_points)
+        # Draw field name at top-left corner, oriented along top edge
+        #
+        # Two axis directions derived from field corners:
+        #   h_dir: TL -> TR (horizontal = along top edge)
+        #   v_dir: TL -> BL (vertical = along left edge, into field)
+        #
+        # draw_text anchors at center, so we compute the text's
+        # top-left position then shift by half-dimensions to get center.
+        font_size = 24
+        margin = font_size * 0.5
+        tl = screen_points[3]  # TL (index 3 in BL,BR,TR,TL order)
+        tr = screen_points[2]  # TR
+        bl = screen_points[0]  # BL
 
-        # Draw field name
-        renderer.draw_text(name, (center_x, center_y),
-                           self.label_color, 24, (0, 0, 0))
+        # Unit vectors for field edges from TL
+        h_dx, h_dy = tr[0] - tl[0], tr[1] - tl[1]
+        h_len = math.hypot(h_dx, h_dy) or 1.0
+        h_ux, h_uy = h_dx / h_len, h_dy / h_len  # horizontal unit
+
+        v_dx, v_dy = bl[0] - tl[0], bl[1] - tl[1]
+        v_len = math.hypot(v_dx, v_dy) or 1.0
+        v_ux, v_uy = v_dx / v_len, v_dy / v_len  # vertical unit
+
+        # Rotation angle for text (align with top edge)
+        edge_angle_rad = math.atan2(h_dy, h_dx)
+        edge_angle_deg = -math.degrees(edge_angle_rad)
+
+        # Approximate text dimensions (pygame default font)
+        text_height = font_size * 0.75
+        text_width = len(name) * font_size * 0.5
+
+        # Top-left of text box = TL + margin along both axes
+        tl_x = tl[0] + h_ux * margin + v_ux * margin
+        tl_y = tl[1] + h_uy * margin + v_uy * margin
+
+        # Center of text = top-left + half-width along h + half-height along v
+        cx = tl_x + h_ux * text_width * 0.5 + v_ux * text_height * 0.5
+        cy = tl_y + h_uy * text_width * 0.5 + v_uy * text_height * 0.5
+
+        renderer.draw_text(name, (int(cx), int(cy)),
+                           self.label_color, font_size, (0, 0, 0),
+                           angle=edge_angle_deg)
