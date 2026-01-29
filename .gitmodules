@@ -1,0 +1,3 @@
+[submodule "external/MocapUtility"]
+	path = external/MocapUtility
+	url = https://github.com/chkxw/MocapUtility.git

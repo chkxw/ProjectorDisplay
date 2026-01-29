@@ -104,7 +104,7 @@ class MocapTracker:
             return self._mocap_available
 
         try:
-            from MocapUtility import MoCapUtility
+            from external.MocapUtility import MoCapUtility
             self._mocap_available = True
             logger.debug("MocapUtility is available")
         except ImportError:
@@ -246,7 +246,7 @@ class MocapTracker:
             Result dict with status
         """
         try:
-            from MocapUtility import MoCapUtility
+            from external.MocapUtility import MoCapUtility
 
             logger.info(f"Connecting to MoCap server at {self._config.ip}:{self._config.port}")
 
