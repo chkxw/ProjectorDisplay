@@ -220,6 +220,32 @@ def remove_field_background(scene, field: str) -> dict:
 
 
 @register_command
+def set_calibration(scene, calibration: dict) -> dict:
+    """
+    Apply new calibration at runtime.
+
+    Accepts the full calibration structure (resolution, screen_field),
+    validates it, replaces the screen field, clears all user-defined fields,
+    and writes the updated calibration to disk.
+
+    Args:
+        scene: Scene instance
+        calibration: Full calibration dict with resolution and screen_field
+
+    Returns:
+        Response with status and world_bounds on success
+    """
+    server = getattr(scene, '_server', None)
+    if server is None:
+        return {"status": "error", "message": "Server reference not available"}
+    try:
+        info = server.apply_calibration(calibration)
+        return {"status": "success", "message": "Calibration applied and saved", **info}
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+
+
+@register_command
 def set_field_background_color(scene, field: str, color, alpha: int = 255) -> dict:
     """
     Set a solid color background for a field.

@@ -311,6 +311,24 @@ class DisplayClient:
         """Get field information."""
         return self._send_command({"action": "get_field", "name": name})
 
+    def set_calibration(self, calibration: dict) -> Optional[Dict]:
+        """
+        Apply new calibration at runtime.
+
+        Validates resolution, replaces the screen field, clears all
+        user-defined fields, and writes the calibration to disk.
+
+        Args:
+            calibration: Full calibration dict with resolution and screen_field
+
+        Returns:
+            Response with status and world_bounds on success
+        """
+        return self._send_command({
+            "action": "set_calibration",
+            "calibration": calibration
+        })
+
     # --- Scene Commands ---
 
     def clear_scene(self) -> Optional[Dict]:

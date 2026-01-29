@@ -108,6 +108,8 @@ class ProjectorDisplayServer:
         self.mocap_tracker = MocapTracker(self.scene)
         # Attach tracker to scene so commands can access it
         self.scene._mocap_tracker = self.mocap_tracker
+        # Attach server to scene so commands can access it (e.g. set_calibration)
+        self.scene._server = self
 
         # Cached transform values
         self._screen_width = 0
@@ -222,43 +224,55 @@ class ProjectorDisplayServer:
             self.logger.error(f"Failed to load calibration: {e}")
             return False
 
-    def _apply_calibration(self) -> bool:
-        """Apply loaded calibration after renderer is initialized."""
-        if not hasattr(self, '_pending_calibration'):
-            return False
+    def apply_calibration(self, calib_data: dict, write_to_disk: bool = True) -> dict:
+        """
+        Apply new calibration at runtime.
 
-        calib_data = self._pending_calibration
-        del self._pending_calibration
+        Validates resolution and screen_field, clears all existing fields,
+        registers the new screen field, updates world bounds, and optionally
+        writes the calibration to disk.
 
-        # Check resolution
-        stored_resolution = calib_data.get('resolution', {})
-        stored_width = stored_resolution.get('width')
-        stored_height = stored_resolution.get('height')
+        Args:
+            calib_data: Full calibration dict (resolution, screen_field)
+            write_to_disk: Whether to write calibration to the YAML file
 
-        if stored_width and stored_height:
-            if stored_width != self._screen_width or stored_height != self._screen_height:
-                self.logger.error(f"Calibration resolution mismatch: "
-                                  f"stored={stored_width}x{stored_height}, "
-                                  f"current={self._screen_width}x{self._screen_height}")
-                return False
+        Returns:
+            Dict with world_bounds on success
 
-        # Get screen field data
-        screen_field = calib_data.get('screen_field', {})
-        world_points = screen_field.get('world_points')
-        local_points = screen_field.get('local_points')
+        Raises:
+            ValueError: On resolution mismatch or missing fields
+        """
+        # 1. Validate resolution
+        res = calib_data.get('resolution', {})
+        w, h = res.get('width'), res.get('height')
+        if not w or not h:
+            raise ValueError("Missing resolution.width/height")
+        if w != self._screen_width or h != self._screen_height:
+            raise ValueError(
+                f"Resolution mismatch: got {w}x{h}, "
+                f"screen is {self._screen_width}x{self._screen_height}"
+            )
 
+        # 2. Validate screen_field
+        sf = calib_data.get('screen_field', {})
+        world_points = sf.get('world_points')
+        local_points = sf.get('local_points')
         if not world_points or not local_points:
-            self.logger.error("Calibration file missing 'screen_field' with world_points and local_points")
-            return False
+            raise ValueError("Missing screen_field.world_points/local_points")
 
-        # Register screen field
+        # 3. Clear all fields (removes user fields + old screen)
+        self.scene.field_calibrator.fields.clear()
+        self.scene.field_calibrator.transform_matrix.clear()
+        self.scene.field_calibrator.transform_matrix["base"] = {}
+
+        # 4. Register new screen field
         self.scene.field_calibrator.register_field(
             "screen",
             np.array(world_points, dtype=np.float32),
             np.array(local_points, dtype=np.float32)
         )
 
-        # Calculate world bounds from world_points
+        # 5. Update world bounds
         world_pts = np.array(world_points)
         self._world_bounds = (
             float(world_pts[:, 0].min()),
@@ -267,8 +281,31 @@ class ProjectorDisplayServer:
             float(world_pts[:, 1].max())
         )
 
+        # 6. Write to calibration file if requested
+        if write_to_disk and self.calibration_path:
+            with open(self.calibration_path, 'w') as f:
+                yaml.safe_dump(calib_data, f, default_flow_style=False, sort_keys=False)
+
         self.logger.info(f"Screen field registered. World bounds: {self._world_bounds}")
-        return True
+
+        return {
+            "world_bounds": list(self._world_bounds),
+        }
+
+    def _apply_calibration(self) -> bool:
+        """Apply loaded calibration after renderer is initialized."""
+        if not hasattr(self, '_pending_calibration'):
+            return False
+
+        calib_data = self._pending_calibration
+        del self._pending_calibration
+
+        try:
+            self.apply_calibration(calib_data, write_to_disk=False)
+            return True
+        except ValueError as e:
+            self.logger.error(f"Calibration error: {e}")
+            return False
 
     def init_display(self) -> bool:
         """
