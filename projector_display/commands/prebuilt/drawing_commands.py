@@ -28,7 +28,8 @@ def _parse_color_param(color, default=(255, 255, 255, 255)):
 @register_command
 def draw_circle(scene, id: str, x: float, y: float, radius: float,
                 color=None, field: str = "base",
-                filled: bool = True, thickness: int = 0) -> dict:
+                filled: bool = True, thickness: int = 0,
+                z_order: int = 0) -> dict:
     """
     Draw a persistent circle overlay.
 
@@ -42,6 +43,7 @@ def draw_circle(scene, id: str, x: float, y: float, radius: float,
         field: Coordinate field (default "base" = world coords)
         filled: Whether to fill (default True)
         thickness: Outline thickness in pixels (used when filled=False)
+        z_order: Render order (lower = behind, default 0)
 
     Returns:
         Response with status and id
@@ -54,9 +56,13 @@ def draw_circle(scene, id: str, x: float, y: float, radius: float,
         filled=filled,
         thickness=thickness,
     )
-    drawing = Drawing(id=id, primitive=prim, world_x=world_x, world_y=world_y)
+    drawing = Drawing(id=id, primitive=prim, world_x=world_x, world_y=world_y,
+                      z_order=z_order)
     scene.add_drawing(drawing)
-    return {"status": "success", "id": id}
+    result = {"status": "success", "id": id}
+    if z_order != 0:
+        result["z_order"] = z_order
+    return result
 
 
 @register_command
@@ -64,7 +70,7 @@ def draw_box(scene, id: str, x: float, y: float,
              width: float, height: float,
              color=None, field: str = "base",
              filled: bool = True, thickness: int = 0,
-             angle: float = 0.0) -> dict:
+             angle: float = 0.0, z_order: int = 0) -> dict:
     """
     Draw a persistent box/rectangle overlay.
 
@@ -80,6 +86,7 @@ def draw_box(scene, id: str, x: float, y: float,
         filled: Whether to fill (default True)
         thickness: Outline thickness in pixels
         angle: Rotation angle in radians (default 0)
+        z_order: Render order (lower = behind, default 0)
 
     Returns:
         Response with status and id
@@ -94,16 +101,20 @@ def draw_box(scene, id: str, x: float, y: float,
         filled=filled,
         thickness=thickness,
     )
-    drawing = Drawing(id=id, primitive=prim, world_x=world_x, world_y=world_y)
+    drawing = Drawing(id=id, primitive=prim, world_x=world_x, world_y=world_y,
+                      z_order=z_order)
     scene.add_drawing(drawing)
-    return {"status": "success", "id": id}
+    result = {"status": "success", "id": id}
+    if z_order != 0:
+        result["z_order"] = z_order
+    return result
 
 
 @register_command
 def draw_line(scene, id: str, x1: float, y1: float,
               x2: float, y2: float,
               color=None, thickness: int = 2,
-              field: str = "base") -> dict:
+              field: str = "base", z_order: int = 0) -> dict:
     """
     Draw a persistent line overlay.
 
@@ -115,6 +126,7 @@ def draw_line(scene, id: str, x1: float, y1: float,
         color: RGBA color (default white)
         thickness: Line thickness in pixels (default 2)
         field: Coordinate field (default "base")
+        z_order: Render order (lower = behind, default 0)
 
     Returns:
         Response with status and id
@@ -128,16 +140,20 @@ def draw_line(scene, id: str, x1: float, y1: float,
     )
     drawing = Drawing(id=id, primitive=prim,
                       world_x=wx1, world_y=wy1,
-                      world_x2=wx2, world_y2=wy2)
+                      world_x2=wx2, world_y2=wy2,
+                      z_order=z_order)
     scene.add_drawing(drawing)
-    return {"status": "success", "id": id}
+    result = {"status": "success", "id": id}
+    if z_order != 0:
+        result["z_order"] = z_order
+    return result
 
 
 @register_command
 def draw_arrow(scene, id: str, x1: float, y1: float,
                x2: float, y2: float,
                color=None, thickness: int = 2,
-               field: str = "base") -> dict:
+               field: str = "base", z_order: int = 0) -> dict:
     """
     Draw a persistent arrow overlay.
 
@@ -149,6 +165,7 @@ def draw_arrow(scene, id: str, x1: float, y1: float,
         color: RGBA color (default white)
         thickness: Arrow thickness in pixels (default 2)
         field: Coordinate field (default "base")
+        z_order: Render order (lower = behind, default 0)
 
     Returns:
         Response with status and id
@@ -162,15 +179,20 @@ def draw_arrow(scene, id: str, x1: float, y1: float,
     )
     drawing = Drawing(id=id, primitive=prim,
                       world_x=wx1, world_y=wy1,
-                      world_x2=wx2, world_y2=wy2)
+                      world_x2=wx2, world_y2=wy2,
+                      z_order=z_order)
     scene.add_drawing(drawing)
-    return {"status": "success", "id": id}
+    result = {"status": "success", "id": id}
+    if z_order != 0:
+        result["z_order"] = z_order
+    return result
 
 
 @register_command
 def draw_polygon(scene, id: str, vertices: list,
                  color=None, field: str = "base",
-                 filled: bool = True, thickness: int = 0) -> dict:
+                 filled: bool = True, thickness: int = 0,
+                 z_order: int = 0) -> dict:
     """
     Draw a persistent polygon overlay.
 
@@ -182,6 +204,7 @@ def draw_polygon(scene, id: str, vertices: list,
         field: Coordinate field (default "base")
         filled: Whether to fill (default True)
         thickness: Outline thickness in pixels
+        z_order: Render order (lower = behind, default 0)
 
     Returns:
         Response with status and id
@@ -205,15 +228,19 @@ def draw_polygon(scene, id: str, vertices: list,
         filled=filled,
         thickness=thickness,
     )
-    drawing = Drawing(id=id, primitive=prim, world_x=anchor_x, world_y=anchor_y)
+    drawing = Drawing(id=id, primitive=prim, world_x=anchor_x, world_y=anchor_y,
+                      z_order=z_order)
     scene.add_drawing(drawing)
-    return {"status": "success", "id": id}
+    result = {"status": "success", "id": id}
+    if z_order != 0:
+        result["z_order"] = z_order
+    return result
 
 
 @register_command
 def draw_text(scene, id: str, x: float, y: float, text: str,
               color=None, font_size: int = 24,
-              field: str = "base") -> dict:
+              field: str = "base", z_order: int = 0) -> dict:
     """
     Draw a persistent text label overlay.
 
@@ -226,6 +253,7 @@ def draw_text(scene, id: str, x: float, y: float, text: str,
         color: RGBA color (default white)
         font_size: Font size in pixels (default 24)
         field: Coordinate field (default "base")
+        z_order: Render order (lower = behind, default 0)
 
     Returns:
         Response with status and id
@@ -237,9 +265,13 @@ def draw_text(scene, id: str, x: float, y: float, text: str,
         font_size=font_size,
         color=_parse_color_param(color),
     )
-    drawing = Drawing(id=id, primitive=prim, world_x=world_x, world_y=world_y)
+    drawing = Drawing(id=id, primitive=prim, world_x=world_x, world_y=world_y,
+                      z_order=z_order)
     scene.add_drawing(drawing)
-    return {"status": "success", "id": id}
+    result = {"status": "success", "id": id}
+    if z_order != 0:
+        result["z_order"] = z_order
+    return result
 
 
 @register_command

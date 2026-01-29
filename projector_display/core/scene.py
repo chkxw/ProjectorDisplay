@@ -33,6 +33,7 @@ class Scene:
         self.field_calibrator = FieldCalibrator()
         self._rigidbodies: Dict[str, RigidBody] = {}
         self._drawings: Dict[str, Drawing] = {}
+        self._z_counter: int = 0  # Monotonic counter for z-order tie-breaking
 
         # Debug layer toggles
         self.grid_layer_enabled: bool = False
@@ -69,11 +70,20 @@ class Scene:
         with self._lock:
             return copy.deepcopy(self._drawings)
 
+    def _next_z_seq(self) -> int:
+        """Return next monotonic sequence number for z-order tie-breaking.
+
+        Must be called while self._lock is held.
+        """
+        self._z_counter += 1
+        return self._z_counter
+
     # --- Drawing Management (persistent overlays) ---
 
     def add_drawing(self, drawing: Drawing) -> None:
         """Add or replace a persistent drawing overlay."""
         with self._lock:
+            drawing._z_seq = self._next_z_seq()
             self._drawings[drawing.id] = drawing
 
     def remove_drawing(self, drawing_id: str) -> bool:
@@ -104,7 +114,8 @@ class Scene:
     def create_rigidbody(self, name: str, style: Optional[dict] = None,
                          trajectory: Optional[dict] = None,
                          mocap_name: Optional[str] = None,
-                         auto_track: bool = False) -> RigidBody:
+                         auto_track: bool = False,
+                         z_order: int = 0) -> RigidBody:
         """
         Create a new rigid body for display.
 
@@ -114,6 +125,7 @@ class Scene:
             trajectory: Optional trajectory configuration dict
             mocap_name: Optional name in MoCap system
             auto_track: Enable auto-tracking from MoCap (default False)
+            z_order: Render order (lower = behind, default 0)
 
         Returns:
             The created RigidBody
@@ -125,7 +137,9 @@ class Scene:
             if name in self._rigidbodies:
                 raise ValueError(f"RigidBody '{name}' already exists")
 
-            rb = RigidBody(name=name, mocap_name=mocap_name, auto_track=auto_track)
+            rb = RigidBody(name=name, mocap_name=mocap_name, auto_track=auto_track,
+                           z_order=z_order)
+            rb._z_seq = self._next_z_seq()
 
             if style:
                 rb.style = RigidBodyStyle.from_dict(style)
@@ -369,12 +383,14 @@ class Scene:
         with self._lock:
             self._rigidbodies.clear()
             self._drawings.clear()
+            self._z_counter = 0
 
     def clear_all(self):
         """Clear everything including fields (except screen field if exists)."""
         with self._lock:
             self._rigidbodies.clear()
             self._drawings.clear()
+            self._z_counter = 0
             # Keep screen field if it exists
             screen_field = self.field_calibrator.fields.get("screen")
             self.field_calibrator = FieldCalibrator()
@@ -461,6 +477,7 @@ class Scene:
                 trajectory=rb_data.get('trajectory'),
                 mocap_name=rb_data.get('mocap_name'),
                 auto_track=rb_data.get('auto_track', False),
+                z_order=rb_data.get('z_order', 0),
             )
             if rb_data.get('position'):
                 rb.position = tuple(rb_data['position'])
@@ -471,6 +488,6 @@ class Scene:
         # Load drawings
         for did, d_data in data.get('drawings', {}).items():
             drawing = Drawing.from_dict(d_data)
-            scene._drawings[drawing.id] = drawing
+            scene.add_drawing(drawing)
 
         return scene

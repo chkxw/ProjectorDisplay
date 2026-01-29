@@ -110,6 +110,7 @@ def load_scene(scene, scene_data: dict) -> dict:
             style=rb_data.get('style'),
             trajectory=rb_data.get('trajectory'),
             mocap_name=rb_data.get('mocap_name'),
+            z_order=rb_data.get('z_order', 0),
         )
         if rb_data.get('position'):
             rb.position = tuple(rb_data['position'])
@@ -117,11 +118,18 @@ def load_scene(scene, scene_data: dict) -> dict:
             rb.orientation = rb_data['orientation']
             rb._last_orientation = rb_data['orientation']
 
+    # Load drawings
+    from projector_display.core.draw_primitive import Drawing
+    for did, d_data in scene_data.get('drawings', {}).items():
+        drawing = Drawing.from_dict(d_data)
+        scene.add_drawing(drawing)
+
     return {
         "status": "success",
         "message": "Scene loaded",
         "fields": len(scene_data.get('fields', {})),
         "rigidbodies": len(scene_data.get('rigidbodies', {})),
+        "drawings": len(scene_data.get('drawings', {})),
     }
 
 
@@ -314,12 +322,19 @@ def load_scene_from_file(scene, name: str) -> dict:
                 style=rb_data.get('style'),
                 trajectory=rb_data.get('trajectory'),
                 mocap_name=rb_data.get('mocap_name'),
+                z_order=rb_data.get('z_order', 0),
             )
             if rb_data.get('position'):
                 rb.position = tuple(rb_data['position'])
             if rb_data.get('orientation') is not None:
                 rb.orientation = rb_data['orientation']
                 rb._last_orientation = rb_data['orientation']
+
+        # Load drawings
+        from projector_display.core.draw_primitive import Drawing
+        for did, d_data in scene_data.get('drawings', {}).items():
+            drawing = Drawing.from_dict(d_data)
+            scene.add_drawing(drawing)
 
         logger.info(f"Loaded scene '{name}' with {len(scene_data.get('fields', {}))} fields, "
                     f"{len(scene_data.get('rigidbodies', {}))} rigidbodies")

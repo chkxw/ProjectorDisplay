@@ -18,7 +18,7 @@ ERR_RIGIDBODY_NOT_FOUND = "RigidBody '{}' not found"
 @register_command
 def create_rigidbody(scene, name: str, style: dict = None,
                      trajectory: dict = None, mocap_name: str = None,
-                     auto_track: bool = False) -> dict:
+                     auto_track: bool = False, z_order: int = 0) -> dict:
     """
     Create a new rigid body for display.
 
@@ -29,6 +29,7 @@ def create_rigidbody(scene, name: str, style: dict = None,
         trajectory: Optional trajectory configuration dict
         mocap_name: Optional name in MoCap system
         auto_track: Enable auto-tracking from MoCap (default False)
+        z_order: Render order (lower = behind, default 0)
 
     Returns:
         Response with status and created name
@@ -54,13 +55,16 @@ def create_rigidbody(scene, name: str, style: dict = None,
             }
 
     rb = scene.create_rigidbody(name, style=style, trajectory=trajectory,
-                                 mocap_name=mocap_name, auto_track=auto_track)
+                                 mocap_name=mocap_name, auto_track=auto_track,
+                                 z_order=z_order)
 
     result = {"status": "success", "name": rb.name}
     if mocap_name:
         result["mocap_name"] = mocap_name
     if auto_track:
         result["auto_track"] = True
+    if z_order != 0:
+        result["z_order"] = z_order
 
     return result
 

@@ -443,72 +443,86 @@ class ProjectorDisplayServer:
 
         # F1: Get snapshot for safe iteration (lock held briefly for copy only)
         rigidbodies_snapshot = self.scene.get_rigidbodies_snapshot()
+        drawings_snapshot = self.scene.get_drawings_snapshot()
 
         # ADR-12: Position-aware size conversion
         fc = self.scene.field_calibrator
 
-        # Draw rigid bodies
-        for name, rb in rigidbodies_snapshot.items():
-            display_pos = rb.get_display_position()
-            if display_pos is None:
-                continue
-
-            # Convert position to screen coords
-            screen_pos = self.world_to_screen(display_pos[0], display_pos[1])
-            screen_size = fc.world_scale(display_pos, rb.style.size)
-
-            # Get screen orientation
-            screen_orientation = None
-            orientation_end = None
-
-            display_orient = rb.get_display_orientation()
-            if display_orient is not None or rb._last_orientation != 0:
-                effective_orientation = rb.get_effective_orientation()
-
-                # Transform orientation via two-point method
-                if "screen" in self.scene.field_calibrator.fields:
-                    screen_orientation = self.scene.field_calibrator.transform_orientation(
-                        "screen", display_pos, effective_orientation
-                    )
-
-                    # Calculate arrow end point
-                    arrow_len_world = rb.style.orientation_length
-                    world_end = (
-                        display_pos[0] + math.cos(effective_orientation) * arrow_len_world,
-                        display_pos[1] + math.sin(effective_orientation) * arrow_len_world
-                    )
-                    orientation_end = self.world_to_screen(world_end[0], world_end[1])
-                else:
-                    screen_orientation = effective_orientation
-
-            # Get label offset in pixels (ADR-12: signed distance scaling)
-            lo = rb.style.label_offset
-            label_offset_pixels = (
-                int(math.copysign(fc.world_scale(display_pos, abs(lo[0])), lo[0])) if lo[0] else 0,
-                int(math.copysign(fc.world_scale(display_pos, abs(lo[1])), lo[1])) if lo[1] else 0,
-            )
-
-            # Draw trajectory first (behind rigid body)
-            if rb.trajectory_style.enabled:
-                trajectory_points = rb.get_trajectory_points()
-                if len(trajectory_points) >= 2:
-                    screen_traj = [self.world_to_screen(p[0], p[1]) for p in trajectory_points]
-                    # ADR-12: Bind scale to rigid body position
-                    scale_at_pos = lambda d, pos=display_pos: fc.world_scale(pos, d)
-                    draw_trajectory(self.renderer, screen_traj, rb.trajectory_style,
-                                    scale_at_pos)
-
-            # Draw the rigid body
-            draw_rigidbody(self.renderer, rb, screen_pos, screen_size,
-                           screen_orientation, orientation_end, label_offset_pixels)
-
-        # Draw persistent overlays (direct drawings)
-        drawings_snapshot = self.scene.get_drawings_snapshot()
+        # Collect all renderables for z-order sorted rendering
+        renderables = []
+        for rb in rigidbodies_snapshot.values():
+            if rb.get_display_position() is not None:
+                renderables.append((rb.z_order, rb._z_seq, 'rb', rb))
         for drawing in drawings_snapshot.values():
-            self._render_drawing(drawing)
+            renderables.append((drawing.z_order, drawing._z_seq, 'drawing', drawing))
+
+        renderables.sort(key=lambda x: (x[0], x[1]))
+
+        for _, _, item_type, item in renderables:
+            if item_type == 'rb':
+                self._render_rigidbody(item, fc)
+            else:
+                self._render_drawing(item)
 
         # Update display
         self.renderer.flip()
+
+    def _render_rigidbody(self, rb, fc):
+        """Render a single rigid body with trajectory, shape, orientation, and label.
+
+        Args:
+            rb: RigidBody snapshot to render
+            fc: FieldCalibrator for coordinate conversion
+        """
+        display_pos = rb.get_display_position()
+        # Convert position to screen coords
+        screen_pos = self.world_to_screen(display_pos[0], display_pos[1])
+        screen_size = fc.world_scale(display_pos, rb.style.size)
+
+        # Get screen orientation
+        screen_orientation = None
+        orientation_end = None
+
+        display_orient = rb.get_display_orientation()
+        if display_orient is not None or rb._last_orientation != 0:
+            effective_orientation = rb.get_effective_orientation()
+
+            # Transform orientation via two-point method
+            if "screen" in self.scene.field_calibrator.fields:
+                screen_orientation = self.scene.field_calibrator.transform_orientation(
+                    "screen", display_pos, effective_orientation
+                )
+
+                # Calculate arrow end point
+                arrow_len_world = rb.style.orientation_length
+                world_end = (
+                    display_pos[0] + math.cos(effective_orientation) * arrow_len_world,
+                    display_pos[1] + math.sin(effective_orientation) * arrow_len_world
+                )
+                orientation_end = self.world_to_screen(world_end[0], world_end[1])
+            else:
+                screen_orientation = effective_orientation
+
+        # Get label offset in pixels (ADR-12: signed distance scaling)
+        lo = rb.style.label_offset
+        label_offset_pixels = (
+            int(math.copysign(fc.world_scale(display_pos, abs(lo[0])), lo[0])) if lo[0] else 0,
+            int(math.copysign(fc.world_scale(display_pos, abs(lo[1])), lo[1])) if lo[1] else 0,
+        )
+
+        # Draw trajectory first (behind rigid body)
+        if rb.trajectory_style.enabled:
+            trajectory_points = rb.get_trajectory_points()
+            if len(trajectory_points) >= 2:
+                screen_traj = [self.world_to_screen(p[0], p[1]) for p in trajectory_points]
+                # ADR-12: Bind scale to rigid body position
+                scale_at_pos = lambda d, pos=display_pos: fc.world_scale(pos, d)
+                draw_trajectory(self.renderer, screen_traj, rb.trajectory_style,
+                                scale_at_pos)
+
+        # Draw the rigid body
+        draw_rigidbody(self.renderer, rb, screen_pos, screen_size,
+                       screen_orientation, orientation_end, label_offset_pixels)
 
     def _render_drawing(self, drawing):
         """Render a single persistent drawing overlay.

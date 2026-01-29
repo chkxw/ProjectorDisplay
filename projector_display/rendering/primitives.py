@@ -446,7 +446,7 @@ def draw_compound(renderer: PygameRenderer,
     cos_a = math.cos(angle) if angle is not None else 1.0
     sin_a = math.sin(angle) if angle is not None else 0.0
 
-    for prim in primitives:
+    for prim in sorted(primitives, key=lambda p: p.z_order):
         _draw_single_primitive(renderer, prim, center, scale, cos_a, sin_a, angle)
 
 

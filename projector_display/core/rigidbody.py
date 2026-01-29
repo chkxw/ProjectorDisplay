@@ -162,6 +162,10 @@ class RigidBody:
     _last_orientation: float = field(default=0.0, repr=False)  # Internal fallback for missing orientation
     mocap_name: Optional[str] = None  # Name in MoCap system (optional)
     auto_track: bool = False  # Auto-update position from MoCap when enabled
+    z_order: int = 0  # Render order: lower = behind, higher = in front
+
+    # Runtime state - not serialized
+    _z_seq: int = field(default=0, repr=False)  # Monotonic creation sequence for stable sort
 
     # Runtime state - MoCap driven (not persisted, resets on reconnect)
     _mocap_position: Optional[Tuple[float, float]] = field(default=None, repr=False)
@@ -326,6 +330,8 @@ class RigidBody:
             'style': self.style.to_dict(),
             'trajectory': self.trajectory_style.to_dict(),
         }
+        if self.z_order != 0:
+            data['z_order'] = self.z_order
 
         # Transient runtime state - not persisted, resets on reconnect
         if include_runtime:
@@ -342,6 +348,7 @@ class RigidBody:
             name=data['name'],
             mocap_name=data.get('mocap_name'),
             auto_track=data.get('auto_track', False),
+            z_order=data.get('z_order', 0),
         )
         if data.get('position'):
             rb.position = tuple(data['position'])

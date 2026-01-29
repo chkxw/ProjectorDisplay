@@ -9,7 +9,7 @@ All types are data-only and JSON/YAML serializable.
 """
 
 from typing import List, Tuple, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field as dataclass_field
 from enum import Enum
 
 from projector_display.utils.color import parse_color
@@ -73,6 +73,7 @@ class DrawPrimitive:
     color: Tuple[int, int, int, int] = (255, 255, 255, 255)  # RGBA
     thickness: int = 0   # 0 = filled, >0 = outline/line width in pixels
     filled: bool = True
+    z_order: int = 0  # Render order within compound rigid bodies
 
     def to_dict(self) -> dict:
         """Serialize to dictionary. Only includes fields relevant to this type."""
@@ -110,6 +111,9 @@ class DrawPrimitive:
             data['text'] = self.text
             data['font_size'] = self.font_size
 
+        if self.z_order != 0:
+            data['z_order'] = self.z_order
+
         return data
 
     @classmethod
@@ -132,6 +136,7 @@ class DrawPrimitive:
             color=parse_color(data.get('color', [255, 255, 255, 255])),
             thickness=data.get('thickness', 0),
             filled=data.get('filled', True),
+            z_order=data.get('z_order', 0),
         )
 
 
@@ -150,10 +155,12 @@ class Drawing:
     # LINE/ARROW second endpoint in world coordinates
     world_x2: float = 0.0
     world_y2: float = 0.0
+    z_order: int = 0  # Render order: lower = behind, higher = in front
+    _z_seq: int = dataclass_field(default=0, repr=False)  # Monotonic creation sequence for stable sort
 
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
-        return {
+        data = {
             'id': self.id,
             'primitive': self.primitive.to_dict(),
             'world_x': self.world_x,
@@ -161,6 +168,9 @@ class Drawing:
             'world_x2': self.world_x2,
             'world_y2': self.world_y2,
         }
+        if self.z_order != 0:
+            data['z_order'] = self.z_order
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "Drawing":
@@ -172,4 +182,5 @@ class Drawing:
             world_y=data.get('world_y', 0.0),
             world_x2=data.get('world_x2', 0.0),
             world_y2=data.get('world_y2', 0.0),
+            z_order=data.get('z_order', 0),
         )
