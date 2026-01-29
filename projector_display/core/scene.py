@@ -157,6 +157,24 @@ class Scene:
                 rb.auto_track = auto_track
             return True
 
+    def set_tracking_lost(self, name: str, lost: bool) -> bool:
+        """
+        Set tracking lost status for a rigid body.
+
+        Args:
+            name: Rigid body name
+            lost: True if tracking is lost, False if tracking OK
+
+        Returns:
+            True if updated, False if rigid body not found
+        """
+        with self._lock:
+            rb = self._rigidbodies.get(name)
+            if rb is None:
+                return False
+            rb.tracking_lost = lost
+            return True
+
     def update_style(self, name: str, **style_params) -> bool:
         """
         Update rigid body visualization style.

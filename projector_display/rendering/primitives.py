@@ -17,6 +17,10 @@ from projector_display.core.rigidbody import RigidBody, RigidBodyShape
 # Type alias for RGBA color
 ColorRGBA = Tuple[int, int, int, int]
 
+# Tracking lost indicator settings
+TRACKING_LOST_COLOR = (255, 0, 0)  # Red
+TRACKING_LOST_THICKNESS = 4  # Thicker outline
+
 
 def _ensure_rgba(color: Union[Tuple[int, ...], List[int]]) -> ColorRGBA:
     """Ensure color is RGBA format. Convert RGB to RGBA with alpha=255."""
@@ -305,6 +309,13 @@ def draw_rigidbody(renderer: PygameRenderer,
             draw_polygon(renderer, screen_pos, style.polygon_vertices,
                          screen_size, style.color, screen_orientation)
 
+    # Draw tracking lost indicator (thick red outline)
+    if rigidbody.tracking_lost:
+        _draw_tracking_lost_outline(
+            renderer, style.shape, screen_pos, screen_size,
+            screen_orientation, style.polygon_vertices
+        )
+
     # Draw orientation arrow if we have orientation end point
     if orientation_end is not None:
         draw_orientation_arrow(renderer, screen_pos, orientation_end,
@@ -325,3 +336,77 @@ def _circle_to_polygon(center: Tuple[int, int], radius: int,
         y = center[1] + int(radius * math.sin(angle))
         points.append((x, y))
     return points
+
+
+def _draw_tracking_lost_outline(renderer: PygameRenderer,
+                                 shape: RigidBodyShape,
+                                 center: Tuple[int, int],
+                                 size: int,
+                                 angle: Optional[float] = None,
+                                 polygon_vertices: Optional[List[Tuple[float, float]]] = None) -> None:
+    """
+    Draw a thick red outline to indicate tracking lost.
+
+    Args:
+        renderer: Renderer instance
+        shape: Shape type
+        center: Screen coordinates (x, y)
+        size: Size in pixels
+        angle: Rotation angle in radians (screen coordinates)
+        polygon_vertices: For POLYGON shape, list of vertices
+    """
+    if shape == RigidBodyShape.CIRCLE:
+        renderer.draw_circle(center, size, TRACKING_LOST_COLOR, TRACKING_LOST_THICKNESS)
+
+    elif shape == RigidBodyShape.BOX:
+        if angle is not None:
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+            corners = [(-size, -size), (size, -size), (size, size), (-size, size)]
+            points = []
+            for px, py in corners:
+                rx = px * cos_a - py * sin_a
+                ry = px * sin_a + py * cos_a
+                points.append((center[0] + int(rx), center[1] + int(ry)))
+        else:
+            points = [
+                (center[0] - size, center[1] - size),
+                (center[0] + size, center[1] - size),
+                (center[0] + size, center[1] + size),
+                (center[0] - size, center[1] + size),
+            ]
+        renderer.draw_polygon(points, TRACKING_LOST_COLOR, TRACKING_LOST_THICKNESS)
+
+    elif shape == RigidBodyShape.TRIANGLE:
+        if angle is not None:
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+            points_local = [(size, 0), (-size * 0.5, -size * 0.866), (-size * 0.5, size * 0.866)]
+            points = []
+            for px, py in points_local:
+                rx = px * cos_a - py * sin_a
+                ry = px * sin_a + py * cos_a
+                points.append((center[0] + int(rx), center[1] + int(ry)))
+        else:
+            points = [
+                (center[0], center[1] - size),
+                (center[0] - int(size * 0.866), center[1] + int(size * 0.5)),
+                (center[0] + int(size * 0.866), center[1] + int(size * 0.5))
+            ]
+        renderer.draw_polygon(points, TRACKING_LOST_COLOR, TRACKING_LOST_THICKNESS)
+
+    elif shape == RigidBodyShape.POLYGON and polygon_vertices:
+        if angle is not None:
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+            points = []
+            for vx, vy in polygon_vertices:
+                px = vx * size
+                py = vy * size
+                rx = px * cos_a - py * sin_a
+                ry = px * sin_a + py * cos_a
+                points.append((center[0] + int(rx), center[1] + int(ry)))
+        else:
+            points = [(center[0] + int(vx * size), center[1] + int(vy * size))
+                      for vx, vy in polygon_vertices]
+        renderer.draw_polygon(points, TRACKING_LOST_COLOR, TRACKING_LOST_THICKNESS)

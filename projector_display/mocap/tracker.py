@@ -345,6 +345,8 @@ class MocapTracker:
                     if rb.mocap_name not in self._missing_bodies:
                         logger.warning(f"MoCap body '{rb.mocap_name}' not found for rigidbody '{rb.name}'")
                         self._missing_bodies.add(rb.mocap_name)
+                    # Mark as tracking lost
+                    self._scene.set_tracking_lost(rb.name, True)
                     continue
 
                 # Body found - clear from missing set if it was there
@@ -365,6 +367,8 @@ class MocapTracker:
                     y=pos[1],
                     orientation=orientation
                 )
+                # Mark as tracking OK
+                self._scene.set_tracking_lost(rb.name, False)
 
             except Exception as e:
                 logger.debug(f"Failed to update {rb.name} from MoCap: {e}")
