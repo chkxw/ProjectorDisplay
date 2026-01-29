@@ -6,6 +6,7 @@ Single scene per server instance - to "switch" experiments, client sends
 commands to clear and rebuild the scene.
 """
 
+import copy
 import threading
 from typing import Dict, Optional, List
 from projector_display.core.field_calibrator import FieldCalibrator, Field
@@ -45,9 +46,15 @@ class Scene:
         return self._rigidbodies
 
     def get_rigidbodies_snapshot(self) -> Dict[str, RigidBody]:
-        """Get a snapshot copy of rigidbodies for safe iteration."""
+        """Get a deep copy snapshot of rigidbodies for safe iteration.
+
+        Deep copy ensures render loop can safely iterate position_history
+        while MoCap thread updates the original. If this becomes a bottleneck,
+        switch to selective copy (only copy mutable nested structures like
+        position_history, not the entire RigidBody).
+        """
         with self._lock:
-            return dict(self._rigidbodies)
+            return copy.deepcopy(self._rigidbodies)
 
     def get_fields_snapshot(self) -> Dict[str, 'Field']:
         """Get a snapshot copy of fields for safe iteration."""
