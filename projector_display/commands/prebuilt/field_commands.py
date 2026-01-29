@@ -15,6 +15,14 @@ from projector_display.utils.color import parse_color
 
 logger = logging.getLogger(__name__)
 
+# Reusable error messages
+ERR_FIELD_NOT_FOUND = "Field '{}' not found"
+ERR_SCREEN_FIELD_BACKGROUND = (
+    "Cannot set background on the 'screen' field. "
+    "Use display.background_color in server config instead."
+)
+ERR_INVALID_ALPHA = "Alpha must be 0-255, got {}"
+
 
 @register_command
 def create_field(scene, name: str, world_points: List[List[float]],
@@ -58,7 +66,7 @@ def remove_field(scene, name: str) -> dict:
     if scene.remove_field(name):
         return {"status": "success", "name": name}
     else:
-        return {"status": "error", "message": f"Field '{name}' not found"}
+        return {"status": "error", "message": ERR_FIELD_NOT_FOUND.format(name)}
 
 
 @register_command
@@ -89,7 +97,7 @@ def get_field(scene, name: str) -> dict:
     """
     field = scene.get_field(name)
     if field is None:
-        return {"status": "error", "message": f"Field '{name}' not found"}
+        return {"status": "error", "message": ERR_FIELD_NOT_FOUND.format(name)}
 
     result = {
         "status": "success",
@@ -127,10 +135,15 @@ def set_field_background(scene, field: str, image: str, alpha: int = 255) -> dic
     Returns:
         Response with status
     """
+    # Screen field background is not supported -- the display background color
+    # is a global server setting (display.background_color in config YAML).
+    if field == "screen":
+        return {"status": "error", "message": ERR_SCREEN_FIELD_BACKGROUND}
+
     # Validate field exists
     field_obj = scene.get_field(field)
     if field_obj is None:
-        return {"status": "error", "message": f"Field '{field}' not found"}
+        return {"status": "error", "message": ERR_FIELD_NOT_FOUND.format(field)}
 
     # Validate image exists in session
     storage = get_storage_manager()
@@ -145,7 +158,7 @@ def set_field_background(scene, field: str, image: str, alpha: int = 255) -> dic
 
     # Validate alpha
     if not 0 <= alpha <= 255:
-        return {"status": "error", "message": f"Alpha must be 0-255, got {alpha}"}
+        return {"status": "error", "message": ERR_INVALID_ALPHA.format(alpha)}
 
     # Set background properties on field
     field_obj.background_image = image
@@ -174,10 +187,13 @@ def remove_field_background(scene, field: str) -> dict:
     Returns:
         Response with status
     """
+    if field == "screen":
+        return {"status": "error", "message": ERR_SCREEN_FIELD_BACKGROUND}
+
     # Validate field exists
     field_obj = scene.get_field(field)
     if field_obj is None:
-        return {"status": "error", "message": f"Field '{field}' not found"}
+        return {"status": "error", "message": ERR_FIELD_NOT_FOUND.format(field)}
 
     # Check if field has a background
     had_background = (
@@ -217,10 +233,13 @@ def set_field_background_color(scene, field: str, color, alpha: int = 255) -> di
     Returns:
         Response with status
     """
+    if field == "screen":
+        return {"status": "error", "message": ERR_SCREEN_FIELD_BACKGROUND}
+
     # Validate field exists
     field_obj = scene.get_field(field)
     if field_obj is None:
-        return {"status": "error", "message": f"Field '{field}' not found"}
+        return {"status": "error", "message": ERR_FIELD_NOT_FOUND.format(field)}
 
     # Parse color
     try:
@@ -231,7 +250,7 @@ def set_field_background_color(scene, field: str, color, alpha: int = 255) -> di
 
     # Validate alpha
     if not 0 <= alpha <= 255:
-        return {"status": "error", "message": f"Alpha must be 0-255, got {alpha}"}
+        return {"status": "error", "message": ERR_INVALID_ALPHA.format(alpha)}
 
     # Set background properties (color takes precedence over image)
     field_obj.background_color = rgb

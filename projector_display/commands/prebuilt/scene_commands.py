@@ -17,6 +17,9 @@ from projector_display.storage import get_storage_manager
 
 logger = logging.getLogger(__name__)
 
+# Reusable error messages
+ERR_SCENE_NOT_FOUND = "Scene '{}' not found"
+
 
 @register_command
 def clear_scene(scene) -> dict:
@@ -258,7 +261,7 @@ def load_scene_from_file(scene, name: str) -> dict:
     if not scene_yaml_path.exists():
         return {
             "status": "error",
-            "message": f"Scene '{name}' not found",
+            "message": ERR_SCENE_NOT_FOUND.format(name),
             "available_scenes": storage.list_scenes()
         }
 
@@ -378,7 +381,7 @@ def delete_saved_scene(scene, name: str) -> dict:
     if not storage.scene_exists(name):
         return {
             "status": "error",
-            "message": f"Scene '{name}' not found"
+            "message": ERR_SCENE_NOT_FOUND.format(name)
         }
 
     storage.delete_scene(name)

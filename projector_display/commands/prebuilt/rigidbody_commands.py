@@ -11,6 +11,9 @@ from projector_display.commands.prebuilt.mocap_commands import (
     _get_mocap_tracker, _require_mocap_enabled
 )
 
+# Reusable error messages
+ERR_RIGIDBODY_NOT_FOUND = "RigidBody '{}' not found"
+
 
 @register_command
 def create_rigidbody(scene, name: str, style: dict = None,
@@ -77,7 +80,7 @@ def remove_rigidbody(scene, name: str) -> dict:
     if scene.remove_rigidbody(name):
         return {"status": "success", "name": name}
     else:
-        return {"status": "error", "message": f"RigidBody '{name}' not found"}
+        return {"status": "error", "message": ERR_RIGIDBODY_NOT_FOUND.format(name)}
 
 
 @register_command
@@ -121,7 +124,7 @@ def update_position(scene, name: str, x: float, y: float,
     if scene.update_position(name, x, y, orientation):
         return {"status": "success", "name": name}
     else:
-        return {"status": "error", "message": f"RigidBody '{name}' not found"}
+        return {"status": "error", "message": ERR_RIGIDBODY_NOT_FOUND.format(name)}
 
 
 @register_command
@@ -150,7 +153,7 @@ def update_style(scene, name: str, **style_params) -> dict:
     if scene.update_style(name, **style_params):
         return {"status": "success", "name": name}
     else:
-        return {"status": "error", "message": f"RigidBody '{name}' not found"}
+        return {"status": "error", "message": ERR_RIGIDBODY_NOT_FOUND.format(name)}
 
 
 @register_command
@@ -179,7 +182,7 @@ def update_trajectory(scene, name: str, **traj_params) -> dict:
     if scene.update_trajectory(name, **traj_params):
         return {"status": "success", "name": name}
     else:
-        return {"status": "error", "message": f"RigidBody '{name}' not found"}
+        return {"status": "error", "message": ERR_RIGIDBODY_NOT_FOUND.format(name)}
 
 
 @register_command
@@ -196,7 +199,7 @@ def get_rigidbody(scene, name: str) -> dict:
     """
     rb = scene.get_rigidbody(name)
     if rb is None:
-        return {"status": "error", "message": f"RigidBody '{name}' not found"}
+        return {"status": "error", "message": ERR_RIGIDBODY_NOT_FOUND.format(name)}
 
     return {
         "status": "success",

@@ -19,6 +19,9 @@ from projector_display.storage import get_storage_manager
 
 logger = logging.getLogger(__name__)
 
+# Reusable error messages
+ERR_IMAGE_NOT_FOUND = "Image '{}' not found"
+
 # Supported image formats (by file extension)
 SUPPORTED_IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif'}
 
@@ -254,7 +257,7 @@ def delete_image(scene, name: str) -> dict:
     if not image_path.exists():
         return {
             "status": "error",
-            "message": f"Image '{name}' not found"
+            "message": ERR_IMAGE_NOT_FOUND.format(name)
         }
 
     try:
@@ -293,7 +296,7 @@ def get_image_path(scene, name: str) -> dict:
     if not image_path.exists():
         return {
             "status": "error",
-            "message": f"Image '{name}' not found"
+            "message": ERR_IMAGE_NOT_FOUND.format(name)
         }
 
     return {
