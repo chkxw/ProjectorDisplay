@@ -33,6 +33,7 @@ from projector_display.core.field_calibrator import FieldCalibrator
 from projector_display.rendering.renderer import PygameRenderer
 from projector_display.rendering.primitives import draw_rigidbody
 from projector_display.rendering.trajectory import draw_trajectory
+from projector_display.core.draw_primitive import DrawPrimitiveType
 from projector_display.rendering.debug_layers import GridLayer, FieldLayer
 from projector_display.rendering.background import BackgroundRenderer
 from projector_display.commands import get_registry
@@ -508,8 +509,117 @@ class ProjectorDisplayServer:
             draw_rigidbody(self.renderer, rb, screen_pos, screen_size,
                            screen_orientation, orientation_end, label_offset_pixels)
 
+        # Draw persistent overlays (direct drawings)
+        drawings_snapshot = self.scene.get_drawings_snapshot()
+        for drawing in drawings_snapshot.values():
+            self._render_drawing(drawing)
+
         # Update display
         self.renderer.flip()
+
+    def _render_drawing(self, drawing):
+        """Render a single persistent drawing overlay.
+
+        Converts world coordinates to screen and dispatches to renderer
+        based on primitive type.
+        """
+        prim = drawing.primitive
+        color = prim.color
+        alpha = color[3] if len(color) == 4 else 255
+        rgb = color[:3]
+
+        if prim.type == DrawPrimitiveType.CIRCLE:
+            screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
+            screen_radius = self.meters_to_pixels(prim.radius)
+            if prim.filled:
+                if alpha < 255:
+                    from projector_display.rendering.primitives import _circle_to_polygon
+                    pts = _circle_to_polygon(screen_pos, screen_radius, 32)
+                    self.renderer.draw_polygon_alpha(pts, rgb, alpha)
+                    self.renderer.draw_polygon_alpha(pts, (0, 0, 0), alpha, 2)
+                else:
+                    self.renderer.draw_circle(screen_pos, screen_radius, rgb)
+                    self.renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0), 2)
+            else:
+                thickness = prim.thickness if prim.thickness > 0 else 2
+                if alpha < 255:
+                    from projector_display.rendering.primitives import _circle_to_polygon
+                    pts = _circle_to_polygon(screen_pos, screen_radius, 32)
+                    self.renderer.draw_polygon_alpha(pts, rgb, alpha, thickness)
+                else:
+                    self.renderer.draw_circle(screen_pos, screen_radius, rgb, thickness)
+
+        elif prim.type == DrawPrimitiveType.BOX:
+            screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
+            hw = self.meters_to_pixels(prim.width * 0.5)
+            hh = self.meters_to_pixels(prim.height * 0.5)
+
+            if prim.angle != 0.0:
+                cos_a = math.cos(prim.angle)
+                sin_a = math.sin(prim.angle)
+                corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+                points = []
+                for bx, by in corners:
+                    rx = bx * cos_a - by * sin_a
+                    ry = bx * sin_a + by * cos_a
+                    points.append((screen_pos[0] + int(rx), screen_pos[1] + int(ry)))
+            else:
+                points = [
+                    (screen_pos[0] - hw, screen_pos[1] - hh),
+                    (screen_pos[0] + hw, screen_pos[1] - hh),
+                    (screen_pos[0] + hw, screen_pos[1] + hh),
+                    (screen_pos[0] - hw, screen_pos[1] + hh),
+                ]
+
+            if prim.filled:
+                if alpha < 255:
+                    self.renderer.draw_polygon_alpha(points, rgb, alpha)
+                    self.renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
+                else:
+                    self.renderer.draw_polygon(points, rgb)
+                    self.renderer.draw_polygon(points, (0, 0, 0), 2)
+            else:
+                thickness = prim.thickness if prim.thickness > 0 else 2
+                if alpha < 255:
+                    self.renderer.draw_polygon_alpha(points, rgb, alpha, thickness)
+                else:
+                    self.renderer.draw_polygon(points, rgb, thickness)
+
+        elif prim.type in (DrawPrimitiveType.LINE, DrawPrimitiveType.ARROW):
+            screen_start = self.world_to_screen(drawing.world_x, drawing.world_y)
+            screen_end = self.world_to_screen(drawing.world_x2, drawing.world_y2)
+            thickness = prim.thickness if prim.thickness > 0 else 2
+
+            if prim.type == DrawPrimitiveType.LINE:
+                if alpha < 255:
+                    self.renderer.draw_line_alpha(screen_start, screen_end, rgb, alpha, thickness)
+                else:
+                    self.renderer.draw_line(screen_start, screen_end, rgb, thickness)
+            else:
+                from projector_display.rendering.primitives import draw_orientation_arrow
+                draw_orientation_arrow(self.renderer, screen_start, screen_end, color, thickness)
+
+        elif prim.type == DrawPrimitiveType.POLYGON:
+            if prim.vertices and len(prim.vertices) >= 3:
+                # Vertices stored as absolute world coords
+                points = [self.world_to_screen(vx, vy) for vx, vy in prim.vertices]
+                if prim.filled:
+                    if alpha < 255:
+                        self.renderer.draw_polygon_alpha(points, rgb, alpha)
+                        self.renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
+                    else:
+                        self.renderer.draw_polygon(points, rgb)
+                        self.renderer.draw_polygon(points, (0, 0, 0), 2)
+                else:
+                    thickness = prim.thickness if prim.thickness > 0 else 2
+                    if alpha < 255:
+                        self.renderer.draw_polygon_alpha(points, rgb, alpha, thickness)
+                    else:
+                        self.renderer.draw_polygon(points, rgb, thickness)
+
+        elif prim.type == DrawPrimitiveType.TEXT:
+            screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
+            self.renderer.draw_text(prim.text, screen_pos, rgb, prim.font_size, (0, 0, 0))
 
     def run(self):
         """Main server loop."""

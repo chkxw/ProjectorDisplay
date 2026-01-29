@@ -8,6 +8,7 @@ from projector_display.core.rigidbody import (
     TrajectoryStyle,
     TrajectoryLineStyle,
 )
+from projector_display.core.draw_primitive import DrawPrimitive, DrawPrimitiveType, Drawing
 from projector_display.core.scene import Scene
 
 __all__ = [
@@ -18,5 +19,8 @@ __all__ = [
     "RigidBodyShape",
     "TrajectoryStyle",
     "TrajectoryLineStyle",
+    "DrawPrimitive",
+    "DrawPrimitiveType",
+    "Drawing",
     "Scene",
 ]

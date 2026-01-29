@@ -12,6 +12,7 @@ from projector_display.commands.prebuilt import scene_commands
 from projector_display.commands.prebuilt import debug_commands
 from projector_display.commands.prebuilt import asset_commands
 from projector_display.commands.prebuilt import mocap_commands
+from projector_display.commands.prebuilt import drawing_commands
 
 __all__ = [
     "rigidbody_commands",
@@ -20,4 +21,5 @@ __all__ = [
     "debug_commands",
     "asset_commands",
     "mocap_commands",
+    "drawing_commands",
 ]

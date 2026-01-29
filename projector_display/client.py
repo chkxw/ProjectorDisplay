@@ -644,6 +644,85 @@ class DisplayClient:
         """Disable auto-tracking for a rigidbody."""
         return self._send_command({"action": "disable_tracking", "name": name})
 
+    # --- Drawing Commands ---
+
+    def draw_circle(self, id: str, x: float, y: float, radius: float,
+                    color=None, field: str = "base", **kwargs) -> Optional[Dict]:
+        """Draw a persistent circle overlay."""
+        cmd = {"action": "draw_circle", "id": id, "x": x, "y": y,
+               "radius": radius, "field": field}
+        if color is not None:
+            cmd["color"] = color
+        cmd.update(kwargs)
+        return self._send_command(cmd)
+
+    def draw_box(self, id: str, x: float, y: float,
+                 width: float, height: float,
+                 color=None, field: str = "base", **kwargs) -> Optional[Dict]:
+        """Draw a persistent box/rectangle overlay."""
+        cmd = {"action": "draw_box", "id": id, "x": x, "y": y,
+               "width": width, "height": height, "field": field}
+        if color is not None:
+            cmd["color"] = color
+        cmd.update(kwargs)
+        return self._send_command(cmd)
+
+    def draw_line(self, id: str, x1: float, y1: float,
+                  x2: float, y2: float,
+                  color=None, thickness: int = 2,
+                  field: str = "base") -> Optional[Dict]:
+        """Draw a persistent line overlay."""
+        cmd = {"action": "draw_line", "id": id,
+               "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+               "thickness": thickness, "field": field}
+        if color is not None:
+            cmd["color"] = color
+        return self._send_command(cmd)
+
+    def draw_arrow(self, id: str, x1: float, y1: float,
+                   x2: float, y2: float,
+                   color=None, thickness: int = 2,
+                   field: str = "base") -> Optional[Dict]:
+        """Draw a persistent arrow overlay."""
+        cmd = {"action": "draw_arrow", "id": id,
+               "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+               "thickness": thickness, "field": field}
+        if color is not None:
+            cmd["color"] = color
+        return self._send_command(cmd)
+
+    def draw_polygon(self, id: str, vertices: list,
+                     color=None, field: str = "base", **kwargs) -> Optional[Dict]:
+        """Draw a persistent polygon overlay."""
+        cmd = {"action": "draw_polygon", "id": id,
+               "vertices": vertices, "field": field}
+        if color is not None:
+            cmd["color"] = color
+        cmd.update(kwargs)
+        return self._send_command(cmd)
+
+    def draw_text(self, id: str, x: float, y: float, text: str,
+                  color=None, font_size: int = 24,
+                  field: str = "base") -> Optional[Dict]:
+        """Draw a persistent text label overlay."""
+        cmd = {"action": "draw_text", "id": id, "x": x, "y": y,
+               "text": text, "font_size": font_size, "field": field}
+        if color is not None:
+            cmd["color"] = color
+        return self._send_command(cmd)
+
+    def remove_drawing(self, id: str) -> Optional[Dict]:
+        """Remove a persistent drawing by ID."""
+        return self._send_command({"action": "remove_drawing", "id": id})
+
+    def list_drawings(self) -> Optional[Dict]:
+        """List all persistent drawing IDs."""
+        return self._send_command({"action": "list_drawings"})
+
+    def clear_drawings(self) -> Optional[Dict]:
+        """Remove all persistent drawings."""
+        return self._send_command({"action": "clear_drawings"})
+
     # --- Context Manager ---
 
     def __enter__(self):

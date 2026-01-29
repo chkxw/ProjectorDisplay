@@ -1,7 +1,7 @@
 """
 Scene management for projector display.
 
-A Scene holds a FieldCalibrator and a collection of RigidBodies.
+A Scene holds a FieldCalibrator, a collection of RigidBodies, and persistent Drawings.
 Single scene per server instance - to "switch" experiments, client sends
 commands to clear and rebuild the scene.
 """
@@ -11,6 +11,7 @@ import threading
 from typing import Dict, Optional, List
 from projector_display.core.field_calibrator import FieldCalibrator, Field
 from projector_display.core.rigidbody import RigidBody, RigidBodyStyle, TrajectoryStyle
+from projector_display.core.draw_primitive import Drawing
 
 
 class Scene:
@@ -23,13 +24,15 @@ class Scene:
         │   └── Fields: Dict[name, Field]
         │         ├── "screen" (world meters ↔ screen pixels)
         │         └── user-defined fields (world ↔ local coords)
-        └── RigidBodies: Dict[name, RigidBody]
+        ├── RigidBodies: Dict[name, RigidBody]
+        └── Drawings: Dict[id, Drawing]  (persistent overlays)
     """
 
     def __init__(self):
         self._lock = threading.Lock()
         self.field_calibrator = FieldCalibrator()
         self._rigidbodies: Dict[str, RigidBody] = {}
+        self._drawings: Dict[str, Drawing] = {}
 
         # Debug layer toggles
         self.grid_layer_enabled: bool = False
@@ -60,6 +63,41 @@ class Scene:
         """Get a snapshot copy of fields for safe iteration."""
         with self._lock:
             return dict(self.field_calibrator.fields)
+
+    def get_drawings_snapshot(self) -> Dict[str, Drawing]:
+        """Get a deep copy snapshot of drawings for safe render iteration."""
+        with self._lock:
+            return copy.deepcopy(self._drawings)
+
+    # --- Drawing Management (persistent overlays) ---
+
+    def add_drawing(self, drawing: Drawing) -> None:
+        """Add or replace a persistent drawing overlay."""
+        with self._lock:
+            self._drawings[drawing.id] = drawing
+
+    def remove_drawing(self, drawing_id: str) -> bool:
+        """Remove a drawing by ID. Returns True if removed, False if not found."""
+        with self._lock:
+            if drawing_id in self._drawings:
+                del self._drawings[drawing_id]
+                return True
+            return False
+
+    def get_drawing(self, drawing_id: str) -> Optional[Drawing]:
+        """Get a drawing by ID."""
+        with self._lock:
+            return self._drawings.get(drawing_id)
+
+    def list_drawings(self) -> List[str]:
+        """List all drawing IDs."""
+        with self._lock:
+            return list(self._drawings.keys())
+
+    def clear_drawings(self) -> None:
+        """Remove all persistent drawings."""
+        with self._lock:
+            self._drawings.clear()
 
     # --- RigidBody Management ---
 
@@ -233,6 +271,10 @@ class Scene:
                         value = tuple(value)
                     elif key == 'polygon_vertices' and value is not None:
                         value = [tuple(v) for v in value]
+                    elif key == 'draw_list' and value is not None:
+                        from projector_display.core.draw_primitive import DrawPrimitive
+                        value = [DrawPrimitive.from_dict(p) if isinstance(p, dict) else p
+                                 for p in value]
                     setattr(rb.style, key, value)
 
             return True
@@ -323,14 +365,16 @@ class Scene:
     # --- Scene Operations ---
 
     def clear(self):
-        """Clear all rigid bodies from the scene (keeps fields)."""
+        """Clear all rigid bodies and drawings from the scene (keeps fields)."""
         with self._lock:
             self._rigidbodies.clear()
+            self._drawings.clear()
 
     def clear_all(self):
         """Clear everything including fields (except screen field if exists)."""
         with self._lock:
             self._rigidbodies.clear()
+            self._drawings.clear()
             # Keep screen field if it exists
             screen_field = self.field_calibrator.fields.get("screen")
             self.field_calibrator = FieldCalibrator()
@@ -373,6 +417,10 @@ class Scene:
                 'rigidbodies': {
                     name: rb.to_dict()
                     for name, rb in self._rigidbodies.items()
+                },
+                'drawings': {
+                    did: d.to_dict()
+                    for did, d in self._drawings.items()
                 },
             }
 
@@ -419,5 +467,10 @@ class Scene:
             if rb_data.get('orientation') is not None:
                 rb.orientation = rb_data['orientation']
                 rb._last_orientation = rb_data['orientation']
+
+        # Load drawings
+        for did, d_data in data.get('drawings', {}).items():
+            drawing = Drawing.from_dict(d_data)
+            scene._drawings[drawing.id] = drawing
 
         return scene

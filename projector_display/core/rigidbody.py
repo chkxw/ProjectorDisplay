@@ -20,6 +20,7 @@ class RigidBodyShape(Enum):
     BOX = "box"
     TRIANGLE = "triangle"
     POLYGON = "polygon"  # Custom polygon shape
+    COMPOUND = "compound"  # List of DrawPrimitives in body-local coordinates
 
 
 class TrajectoryLineStyle(Enum):
@@ -41,6 +42,7 @@ class RigidBodyStyle:
     orientation_color: Tuple[int, int, int, int] = (255, 255, 255, 255)  # Arrow color RGBA
     orientation_thickness: int = 2  # Arrow thickness in pixels
     polygon_vertices: Optional[List[Tuple[float, float]]] = None  # For POLYGON shape, relative to center
+    draw_list: Optional[List['DrawPrimitive']] = None  # For COMPOUND shape, body-local coords
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -54,14 +56,22 @@ class RigidBodyStyle:
             'orientation_color': list(self.orientation_color),  # RGBA
             'orientation_thickness': self.orientation_thickness,
             'polygon_vertices': [list(v) for v in self.polygon_vertices] if self.polygon_vertices else None,
+            'draw_list': [p.to_dict() for p in self.draw_list] if self.draw_list else None,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "RigidBodyStyle":
         """Create from dictionary. Accepts RGB, RGBA, hex strings (ADR-8)."""
+        from projector_display.core.draw_primitive import DrawPrimitive
+
         shape = data.get('shape', 'circle')
         if isinstance(shape, str):
             shape = RigidBodyShape(shape)
+
+        draw_list = None
+        if data.get('draw_list'):
+            draw_list = [DrawPrimitive.from_dict(p) for p in data['draw_list']]
+
         return cls(
             shape=shape,
             size=data.get('size', 0.1),
@@ -72,6 +82,7 @@ class RigidBodyStyle:
             orientation_color=parse_color(data.get('orientation_color', [255, 255, 255])),
             orientation_thickness=data.get('orientation_thickness', 2),
             polygon_vertices=[tuple(v) for v in data['polygon_vertices']] if data.get('polygon_vertices') else None,
+            draw_list=draw_list,
         )
 
 
