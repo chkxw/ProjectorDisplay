@@ -12,7 +12,7 @@ and added transform_orientation() method.
 
 import numpy as np
 import cv2
-from math import cos, sin, atan2
+from math import cos, sin, atan2, hypot
 from typing import Dict, Tuple, List, Union, Optional
 from dataclasses import dataclass
 
@@ -68,6 +68,11 @@ class Field:
             return True
 
         return False
+
+
+def _screen_dist(a, b) -> float:
+    """Euclidean distance between two coordinate points."""
+    return hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
 
 
 class FieldCalibrator:
@@ -321,6 +326,41 @@ class FieldCalibrator:
         # Calculate angle from the two transformed points
         return atan2(screen_probe[1] - screen_pos[1],
                      screen_probe[0] - screen_pos[0])
+
+    def world_scale(self, world_pos: Tuple[float, float], distance: float) -> int:
+        """
+        Convert a scalar distance to screen pixels at a specific world position (ADR-12).
+
+        Uses a four-point probe around the position to average out asymmetric
+        perspective distortion. This is the correct way to convert sizes --
+        never use a global pixels-per-meter scalar.
+
+        Args:
+            world_pos: (x, y) position in world coordinates (meters)
+            distance: Distance in world units (meters for "base" field)
+
+        Returns:
+            Equivalent distance in screen pixels (minimum 1)
+        """
+        if "screen" not in self.fields:
+            return max(1, round(distance * 100))  # Fallback
+
+        wx, wy = float(world_pos[0]), float(world_pos[1])
+        d = float(distance)
+
+        # Convert center and four probe points through perspective transform
+        p_center = self.convert([wx, wy], "base", "screen")
+        p_right = self.convert([wx + d, wy], "base", "screen")
+        p_left = self.convert([wx - d, wy], "base", "screen")
+        p_up = self.convert([wx, wy + d], "base", "screen")
+        p_down = self.convert([wx, wy - d], "base", "screen")
+
+        # Compute screen distances in each direction, averaged symmetrically
+        dx = (_screen_dist(p_center, p_right) + _screen_dist(p_center, p_left)) / 2
+        dy = (_screen_dist(p_center, p_up) + _screen_dist(p_center, p_down)) / 2
+
+        # Average x and y for circular approximation
+        return max(1, round((dx + dy) / 2))
 
     def get_transform_function(self, from_field: str, to_field: str):
         """

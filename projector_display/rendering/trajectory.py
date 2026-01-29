@@ -26,7 +26,7 @@ def _ensure_rgba(color: Union[Tuple[int, ...], List[int]]) -> ColorRGBA:
 def draw_trajectory(renderer: PygameRenderer,
                     screen_points: List[Tuple[int, int]],
                     style: TrajectoryStyle,
-                    meters_to_pixels: Callable[[float], int]) -> None:
+                    distance_to_pixels: Callable[[float], int]) -> None:
     """
     Draw trajectory on the renderer.
 
@@ -34,7 +34,8 @@ def draw_trajectory(renderer: PygameRenderer,
         renderer: Renderer instance
         screen_points: List of points in screen coordinates
         style: Trajectory style configuration
-        meters_to_pixels: Function to convert meters to pixels
+        distance_to_pixels: Callable that converts a world distance to pixels
+            (ADR-12: position-aware, bound to the rigid body's world position)
     """
     if not style.enabled or len(screen_points) < 2:
         return
@@ -42,9 +43,9 @@ def draw_trajectory(renderer: PygameRenderer,
     if style.style == "solid":
         _draw_solid_trajectory(renderer, screen_points, style)
     elif style.style == "dotted":
-        _draw_dotted_trajectory(renderer, screen_points, style, meters_to_pixels)
+        _draw_dotted_trajectory(renderer, screen_points, style, distance_to_pixels)
     elif style.style == "dashed":
-        _draw_dashed_trajectory(renderer, screen_points, style, meters_to_pixels)
+        _draw_dashed_trajectory(renderer, screen_points, style, distance_to_pixels)
 
 
 def _draw_solid_trajectory(renderer: PygameRenderer,
@@ -82,9 +83,9 @@ def _draw_solid_trajectory(renderer: PygameRenderer,
 def _draw_dotted_trajectory(renderer: PygameRenderer,
                             screen_points: List[Tuple[int, int]],
                             style: TrajectoryStyle,
-                            meters_to_pixels: Callable[[float], int]) -> None:
+                            distance_to_pixels: Callable[[float], int]) -> None:
     """Draw dotted trajectory with RGBA support."""
-    dot_spacing_pixels = meters_to_pixels(style.dot_spacing)
+    dot_spacing_pixels = distance_to_pixels(style.dot_spacing)
     accumulated_dist = 0
 
     for i in range(len(screen_points) - 1):
@@ -123,9 +124,9 @@ def _draw_dotted_trajectory(renderer: PygameRenderer,
 def _draw_dashed_trajectory(renderer: PygameRenderer,
                             screen_points: List[Tuple[int, int]],
                             style: TrajectoryStyle,
-                            meters_to_pixels: Callable[[float], int]) -> None:
+                            distance_to_pixels: Callable[[float], int]) -> None:
     """Draw dashed trajectory with RGBA support."""
-    dash_length_pixels = meters_to_pixels(style.dash_length)
+    dash_length_pixels = distance_to_pixels(style.dash_length)
     gap_length_pixels = dash_length_pixels // 2  # Gap is half the dash length
 
     accumulated_dist = 0

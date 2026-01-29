@@ -439,7 +439,7 @@ def draw_compound(renderer: PygameRenderer,
     Args:
         renderer: Renderer instance
         center: Body position in screen coordinates
-        scale: Pixels per local unit (from meters_to_pixels(style.size))
+        scale: Pixels per local unit (from world_scale(pos, style.size))
         primitives: List of DrawPrimitive definitions
         angle: Body orientation in screen radians
     """

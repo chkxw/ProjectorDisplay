@@ -412,19 +412,6 @@ class ProjectorDisplayServer:
         # F17: Use round() instead of int() for better accuracy
         return (round(screen_pos[0]), round(screen_pos[1]))
 
-    def meters_to_pixels(self, meters: float) -> int:
-        """Convert meters to pixels (approximate, for sizing)."""
-        if self._world_bounds is None:
-            return round(meters * 100)  # Fallback
-
-        world_width = self._world_bounds[2] - self._world_bounds[0]
-        # F10: Explicit check for division by zero
-        if world_width <= 0:
-            return round(meters * 100)  # Fallback for invalid bounds
-
-        pixels_per_meter = self._screen_width / world_width
-        return max(1, round(meters * pixels_per_meter))
-
     def render_frame(self):
         """Render a single frame."""
         if not self.renderer:
@@ -457,6 +444,9 @@ class ProjectorDisplayServer:
         # F1: Get snapshot for safe iteration (lock held briefly for copy only)
         rigidbodies_snapshot = self.scene.get_rigidbodies_snapshot()
 
+        # ADR-12: Position-aware size conversion
+        fc = self.scene.field_calibrator
+
         # Draw rigid bodies
         for name, rb in rigidbodies_snapshot.items():
             display_pos = rb.get_display_position()
@@ -465,7 +455,7 @@ class ProjectorDisplayServer:
 
             # Convert position to screen coords
             screen_pos = self.world_to_screen(display_pos[0], display_pos[1])
-            screen_size = self.meters_to_pixels(rb.style.size)
+            screen_size = fc.world_scale(display_pos, rb.style.size)
 
             # Get screen orientation
             screen_orientation = None
@@ -491,10 +481,11 @@ class ProjectorDisplayServer:
                 else:
                     screen_orientation = effective_orientation
 
-            # Get label offset in pixels
+            # Get label offset in pixels (ADR-12: signed distance scaling)
+            lo = rb.style.label_offset
             label_offset_pixels = (
-                self.meters_to_pixels(rb.style.label_offset[0]),
-                self.meters_to_pixels(rb.style.label_offset[1])
+                int(math.copysign(fc.world_scale(display_pos, abs(lo[0])), lo[0])) if lo[0] else 0,
+                int(math.copysign(fc.world_scale(display_pos, abs(lo[1])), lo[1])) if lo[1] else 0,
             )
 
             # Draw trajectory first (behind rigid body)
@@ -502,8 +493,10 @@ class ProjectorDisplayServer:
                 trajectory_points = rb.get_trajectory_points()
                 if len(trajectory_points) >= 2:
                     screen_traj = [self.world_to_screen(p[0], p[1]) for p in trajectory_points]
+                    # ADR-12: Bind scale to rigid body position
+                    scale_at_pos = lambda d, pos=display_pos: fc.world_scale(pos, d)
                     draw_trajectory(self.renderer, screen_traj, rb.trajectory_style,
-                                    self.meters_to_pixels)
+                                    scale_at_pos)
 
             # Draw the rigid body
             draw_rigidbody(self.renderer, rb, screen_pos, screen_size,
@@ -528,9 +521,12 @@ class ProjectorDisplayServer:
         alpha = color[3] if len(color) == 4 else 255
         rgb = color[:3]
 
+        # ADR-12: Position-aware size conversion for drawings
+        fc = self.scene.field_calibrator
         if prim.type == DrawPrimitiveType.CIRCLE:
             screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
-            screen_radius = self.meters_to_pixels(prim.radius)
+            draw_world_pos = (drawing.world_x, drawing.world_y)
+            screen_radius = fc.world_scale(draw_world_pos, prim.radius)
             if prim.filled:
                 if alpha < 255:
                     from projector_display.rendering.primitives import _circle_to_polygon
@@ -551,8 +547,9 @@ class ProjectorDisplayServer:
 
         elif prim.type == DrawPrimitiveType.BOX:
             screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
-            hw = self.meters_to_pixels(prim.width * 0.5)
-            hh = self.meters_to_pixels(prim.height * 0.5)
+            draw_world_pos = (drawing.world_x, drawing.world_y)
+            hw = fc.world_scale(draw_world_pos, prim.width * 0.5)
+            hh = fc.world_scale(draw_world_pos, prim.height * 0.5)
 
             if prim.angle != 0.0:
                 cos_a = math.cos(prim.angle)
