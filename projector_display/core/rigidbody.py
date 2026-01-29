@@ -321,8 +321,6 @@ class RigidBody:
             data['tracking_lost'] = self.tracking_lost
             data['mocap_position'] = list(self._mocap_position) if self._mocap_position else None
             data['mocap_orientation'] = self._mocap_orientation
-            data['display_position'] = list(self.get_display_position()) if self.get_display_position() else None
-            data['display_orientation'] = self.get_display_orientation()
 
         return data
 
