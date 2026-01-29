@@ -5,7 +5,7 @@ date: '2026-01-28'
 sections_completed: ['technology_stack', 'language_rules', 'framework_rules', 'testing_rules', 'code_quality', 'workflow_rules', 'critical_rules']
 existing_patterns_found: 11
 status: 'complete'
-rule_count: 45
+rule_count: 48
 optimized_for_llm: true
 ---
 
@@ -47,6 +47,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **Command system**: All commands are functions decorated with `@register_command`. First parameter is always `scene` (Scene instance). Must return a `dict` with at least `"status"` key (`"success"` or `"error"`).
 - **Command auto-discovery**: Adding a new command module requires importing it in `commands/prebuilt/__init__.py`. Module-level `@register_command` decorators run at import time.
 - **Coordinate fields**: Every position command accepts a `field` parameter (default `"base"` = world meters). Convert to world coords at command time via `scene.field_calibrator.convert([x, y], field, "base")`. Never store field-local coords in scene state.
+- **Size conversion via FieldCalibrator (ADR-12)**: Never convert meters/field-units to pixels with a global scalar. Use `field_calibrator.world_scale(world_pos, distance)` which probes the perspective transform at the given position (four directional samples, averaged). All coordinate math -- positions, orientations, and sizes -- goes through FieldCalibrator. Sizes are specified in the same units as positions (meters for `"base"`, local units for custom fields).
 - **Vertex order convention**: Field corner points are always `[BL, BR, TR, TL]` -- counter-clockwise from bottom-left. Index 0=BL, 1=BR, 2=TR, 3=TL.
 - **Orientation transform**: Never use raw orientation angles for screen rendering. Always transform via `field_calibrator.transform_orientation()` which uses two-point conversion (position + probe point).
 - **Thread safety -- snapshot pattern**: Render loop must never read `_rigidbodies`, `_drawings`, or `_fields` directly. Use `get_rigidbodies_snapshot()`, `get_drawings_snapshot()`, `get_fields_snapshot()` which return deep copies under lock.
@@ -91,7 +92,8 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **Never serialize runtime MoCap state**: `_mocap_position`, `_mocap_orientation`, `tracking_lost` are transient. `to_dict()` excludes them by default. Only `to_dict(include_runtime=True)` includes them (for API inspection only).
 - **Calibration file is mandatory**: Server refuses to start without `calibration.yaml`. The "screen" field must exist before any rendering occurs.
 - **Drawing IDs are replace-on-collision**: Sending a drawing command with an existing ID silently replaces it. This is intentional -- enables update-in-place without remove+add.
-- **Compound body scale**: `style.size` for COMPOUND shapes is the scale factor (pixels per local unit), not a radius. Local coords `(1, 0)` maps to `style.size` pixels from center in the orientation direction.
+- **Compound body scale**: `style.size` for COMPOUND shapes is the scale factor applied via `world_scale()`, not a pixel count. Local coords `(1, 0)` maps to `style.size` world-meters from center in the orientation direction.
+- **Never use a global pixels-per-meter scalar**: The old `screen_width / world_width` approach produces wrong sizes under perspective distortion (ADR-12). Always convert sizes through the FieldCalibrator at the object's world position.
 - **Render order matters**: Backgrounds -> debug layers -> trajectories -> bodies -> drawings -> flip. Persistent drawings render ON TOP of rigid bodies.
 - **SDL2 borderless window**: Display uses `NOFRAME` (not `FULLSCREEN`) so the window stays visible when focus is lost. This is deliberate for projector use.
 
@@ -113,4 +115,4 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Review periodically for outdated rules
 - Remove rules that become obvious over time
 
-Last Updated: 2026-01-28
+Last Updated: 2026-01-29
