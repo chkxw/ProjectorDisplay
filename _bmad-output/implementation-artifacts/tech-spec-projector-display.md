@@ -2,25 +2,30 @@
 title: 'Projector Display Utility'
 slug: 'projector-display'
 created: '2026-01-27'
+updated: '2026-01-28'
 status: 'implementation-complete'
-stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8, 9]
-tech_stack: [python>3.10, pygame, opencv, pyyaml]
+stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+tech_stack: [python>3.10, pygame, opencv, pyyaml, numpy]
 files_to_modify: [
   "projector_display/__init__.py",
   "projector_display/server.py",
   "projector_display/client.py",
+  "projector_display/storage.py",
   "projector_display/core/__init__.py",
   "projector_display/core/field_calibrator.py",
   "projector_display/core/scene.py",
   "projector_display/core/rigidbody.py",
+  "projector_display/core/draw_primitive.py",
   "projector_display/commands/__init__.py",
   "projector_display/commands/base.py",
+  "projector_display/commands/prebuilt/__init__.py",
   "projector_display/commands/prebuilt/rigidbody_commands.py",
   "projector_display/commands/prebuilt/field_commands.py",
   "projector_display/commands/prebuilt/scene_commands.py",
   "projector_display/commands/prebuilt/debug_commands.py",
   "projector_display/commands/prebuilt/asset_commands.py",
   "projector_display/commands/prebuilt/mocap_commands.py",
+  "projector_display/commands/prebuilt/drawing_commands.py",
   "projector_display/rendering/__init__.py",
   "projector_display/rendering/renderer.py",
   "projector_display/rendering/primitives.py",
@@ -29,9 +34,9 @@ files_to_modify: [
   "projector_display/rendering/background.py",
   "projector_display/mocap/__init__.py",
   "projector_display/mocap/tracker.py",
-  "projector_display/storage.py",
   "projector_display/utils/__init__.py",
   "projector_display/utils/logging.py",
+  "projector_display/utils/color.py",
   "config/server_config.yaml",
   "pyproject.toml"
 ]
@@ -42,6 +47,7 @@ test_patterns: []
 # Tech-Spec: Projector Display Utility
 
 **Created:** 2026-01-27
+**Updated:** 2026-01-28
 
 ## Overview
 
@@ -58,7 +64,8 @@ Build a scene-based projector display server where:
 - Commands explicitly declare their target coordinate field
 - YAML and Commands are interconvertible (same structure)
 - FieldCalibrator handles all point transformations (reused from reference)
-- Orientations transformed via point conversion (two points → derive angle)
+- Orientations transformed via point conversion (two points -> derive angle)
+- DrawPrimitive provides a composable, data-driven building block for custom shapes and persistent overlays
 
 ### Scope
 
@@ -66,7 +73,10 @@ Build a scene-based projector display server where:
 - Scene architecture (create, dump to YAML, no auto-persist)
 - RigidBody management (explicit creation required)
 - Multiple Fields per Scene with vertex convention: `[BL, BR, TR, TL]` (counter-clockwise from bottom-left)
-- Drawing primitives: Circle, Box, Triangle, Polygon, Trajectory
+- Built-in shapes: Circle, Box, Triangle, Polygon
+- Compound rigid bodies: user-defined shape from list of DrawPrimitives in body-local coordinates
+- Direct drawing overlays: persistent shapes positioned in field coordinates
+- Drawing primitive types: Circle, Box, Line, Polygon, Text, Arrow
 - Proper orientation transformation via point conversion
 - JSON/TCP commands with YAML-mirroring structure
 - Commands specify target field for coordinate interpretation
@@ -76,6 +86,11 @@ Build a scene-based projector display server where:
 - Python client library
 - Debug utility layers: togglable grid layer + experiment field layer
 - State inspection commands: `get_scene`, `get_rigidbody`
+- Flexible color parsing: hex, RGB, RGBA, float, CSV string formats
+- RGBA color format throughout (ADR-8)
+- XDG-compliant persistent storage with session working directories (ADR-10)
+- Field background images with perspective warp via OpenCV
+- Scene save/load to persistent storage
 
 **Out of Scope:**
 - Generic pygame command passthrough (future enhancement)
@@ -91,13 +106,14 @@ Build a scene-based projector display server where:
 - `display_toolbox.py` - Core visualization (1044 lines) - reference for drawing primitives
 - `toolbox_display_server.py` - Socket server (681 lines) - reference for server architecture
 - `display_client.py` - Client wrapper (252 lines) - reference for client API
-- `field_calibrator.py` - Coordinate transformation (350 lines) - **COPY AND EXTEND** (add orientation transform, update terminology: `real_points` → `world_points`, `virtual_points` → `local_points`)
+- `field_calibrator.py` - Coordinate transformation (350 lines) - **COPY AND EXTEND** (add orientation transform, update terminology: `real_points` -> `world_points`, `virtual_points` -> `local_points`)
 
 **Key Design Decisions:**
 1. **Vertex Order Convention:** `[Bottom-Left, Bottom-Right, Top-Right, Top-Left]` - counter-clockwise from origin
 2. **Coordinate Fields:** Each field maps between world coords (common reference, meters) and local coords (field-specific: pixels, experiment units, etc.)
 3. **Orientation Bug Fix:** Must transform orientation via two-point conversion, not direct use
 4. **Terminology:** "world" = common reference frame (meters), "local" = field's own coordinate space
+5. **Drawing Primitives:** Data-driven, JSON-serializable building block shared by compound bodies and direct drawings
 
 ### Files to Reference
 
@@ -117,6 +133,8 @@ Build a scene-based projector display server where:
 5. **MoCap:** Optional module, lazy-loaded only when tracking features are used
 6. **Logging:** Dual-sink to stdout/stderr AND /var/log file
 7. **Modularity:** Co-locate command handlers with toolbox methods they wrap
+8. **Color system:** Unified RGBA format with flexible multi-format parsing (hex, RGB, RGBA, float, CSV)
+9. **Drawing primitives:** Data-only, JSON-serializable DrawPrimitive dataclass shared by compound bodies and persistent overlays - no code execution over the wire
 
 ### Architecture Decision Records
 
@@ -125,7 +143,7 @@ Build a scene-based projector display server where:
 **Rationale:** Balance of clean code and transparency. Decorator only handles registration, no hidden behavior.
 ```python
 @register_command
-def create_rigidbody(self, name: str, style: dict = None):
+def create_rigidbody(scene, name: str, style: dict = None):
     """Create a new rigid body for display."""
     # Implementation
     return {"status": "success", "name": name}
@@ -136,19 +154,20 @@ def create_rigidbody(self, name: str, style: dict = None):
 **Rationale:** Config YAML lives client-side. Server is a stateless display renderer. Different experiments use different client configs pointing to the same server.
 ```
 Server
-└── Scene (one per server instance)
-    ├── FieldCalibrator
-    │   └── Fields: Dict[name, Field]
-    │         ├── "screen" (world meters ↔ screen pixels)
-    │         └── user-defined fields (world ↔ local coords)
-    └── RigidBodies: Dict[name, RigidBody]
++-- Scene (one per server instance)
+    +-- FieldCalibrator
+    |   +-- Fields: Dict[name, Field]
+    |         +-- "screen" (world meters <-> screen pixels)
+    |         +-- user-defined fields (world <-> local coords)
+    +-- RigidBodies: Dict[name, RigidBody]
+    +-- Drawings: Dict[id, Drawing]
 ```
 To "switch" experiments: client sends commands to clear and rebuild scene.
 
 **Field Transform Model:**
 - All fields share "world" as common reference (physical meters)
-- Each field defines: `world_points` (meters) ↔ `local_points` (field-specific)
-- Transform chain: `field_A local → world → field_B local`
+- Each field defines: `world_points` (meters) <-> `local_points` (field-specific)
+- Transform chain: `field_A local -> world -> field_B local`
 
 #### ADR-3: Orientation Transform in FieldCalibrator
 **Decision:** Add `transform_orientation()` method directly to FieldCalibrator
@@ -167,8 +186,8 @@ def transform_orientation(self, field: str, position: tuple,
                  screen_probe[0] - screen_pos[0])
 ```
 
-#### ADR-4: YAML ↔ Command Bidirectionality
-**Decision:** Direct YAML↔dict structure match
+#### ADR-4: YAML <-> Command Bidirectionality
+**Decision:** Direct YAML<->dict structure match
 **Rationale:** Trivial bidirectional conversion. Command names match YAML keys exactly.
 ```yaml
 # Scene YAML structure
@@ -186,8 +205,13 @@ rigidbodies:
       color: gradient
       gradient_start: [255, 0, 0, 255]  # Opaque at current position
       gradient_end: [255, 0, 0, 0]      # Fade to transparent
+drawings:
+  waypoint_1:
+    primitive: {type: circle, radius: 0.05, color: [0, 255, 0, 128], filled: true}
+    world_x: 1.5
+    world_y: 2.0
 ```
-Conversion: `yaml.safe_load()` → iterate → generate commands. Inverse: `scene.to_dict()` → `yaml.dump()`.
+Conversion: `yaml.safe_load()` -> iterate -> generate commands. Inverse: `scene.to_dict()` -> `yaml.dump()`.
 
 #### ADR-5: Renderer Abstraction
 **Decision:** Isolate rendering behind `Renderer` interface, pygame as default implementation
@@ -197,14 +221,24 @@ class Renderer(Protocol):
     def init(self, screen_index: int = 0) -> None: ...  # Always fullscreen
     def get_size(self) -> Tuple[int, int]: ...
     def clear(self, color: Tuple[int, int, int]) -> None: ...
-    def draw_circle(self, center: Tuple[int, int], radius: int, color: Tuple[int, int, int, int]) -> None: ...  # RGBA
-    def draw_polygon(self, points: List[Tuple[int, int]], color: Tuple[int, int, int, int]) -> None: ...  # RGBA
-    def draw_line(self, start: Tuple[int, int], end: Tuple[int, int], color: Tuple[int, int, int, int], width: int) -> None: ...  # RGBA
+    def draw_circle(self, center, radius, color, border=0) -> None: ...
+    def draw_polygon(self, points, color, border=0) -> None: ...
+    def draw_line(self, start, end, color, width=1) -> None: ...
+    def draw_lines(self, points, color, width=1, closed=False) -> None: ...
+    def draw_rect(self, rect, color, border=0) -> None: ...
+    def draw_text(self, text, position, color, font_size=24,
+                  background=None, angle=0.0) -> None: ...
     def flip(self) -> None: ...
+    def quit(self) -> None: ...
 
-class PygameRenderer(Renderer):
-    """Default renderer using pygame. Always fullscreen. Uses pygame.Surface with SRCALPHA for transparency."""
-    ...
+class PygameRenderer:
+    """Default renderer using pygame. Always fullscreen.
+    Includes alpha-blending methods for RGBA support (ADR-8):
+      - draw_polygon_alpha(points, color, alpha, border)
+      - draw_line_alpha(start, end, color, alpha, width)
+      - draw_circle_alpha(center, radius, color, alpha, border)
+      - blit_surface(surface, position)  # For pre-rendered backgrounds
+    """
 ```
 
 #### ADR-6: Display Configuration
@@ -216,6 +250,9 @@ display:
   screen_index: 0       # Explicit display selection for multi-monitor
   update_rate: 30       # Hz, configurable
 ```
+**Multi-display approach:**
+- SDL2: Uses `xrandr --listmonitors` to get display position, creates borderless (`NOFRAME`) window at that position (stays visible when unfocused)
+- SDL1.2: Uses `SDL_VIDEO_FULLSCREEN_DISPLAY` environment variable
 
 #### ADR-7: Optional Orientation with Fallback
 **Decision:** `RigidBody.orientation` is `Optional[float]` with last-known fallback
@@ -224,33 +261,48 @@ display:
 @dataclass
 class RigidBody:
     name: str
-    position: Tuple[float, float]
+    position: Optional[Tuple[float, float]] = None
     orientation: Optional[float] = None
     _last_orientation: float = 0.0  # Internal fallback
 
-    def update_position(self, x: float, y: float, orientation: Optional[float] = None):
-        self.position = (x, y)
-        if orientation is not None:
-            self.orientation = orientation
-            self._last_orientation = orientation
-        else:
-            self.orientation = None
+    # MoCap-driven runtime state (not persisted)
+    _mocap_position: Optional[Tuple[float, float]] = None
+    _mocap_orientation: Optional[float] = None
+    auto_track: bool = False
+    tracking_lost: bool = False
+
+    def get_display_position(self) -> Optional[Tuple[float, float]]:
+        """MoCap takes priority when auto_track enabled."""
+        if self.auto_track and self._mocap_position is not None:
+            return self._mocap_position
+        return self.position
 
     def get_effective_orientation(self) -> float:
-        """Return orientation for rendering."""
-        return self.orientation if self.orientation is not None else self._last_orientation
+        """Return best-available orientation for rendering."""
+        display = self.get_display_orientation()
+        return display if display is not None else self._last_orientation
 ```
 **Rendering behavior:**
 - Style requires orientation (arrow, rotated shapes): use `get_effective_orientation()`
 - Style doesn't require orientation (circle without arrow): ignore orientation
 
+**Position source priority:** MoCap (when `auto_track=True` and connected) > Manual position > None
+
 #### ADR-8: RGBA Color Format
-**Decision:** All colors use RGBA tuple (4 values). RGB (3 values) accepted and auto-converted to RGBA with alpha=255.
+**Decision:** All colors use RGBA tuple (4 values). Multiple input formats accepted and auto-converted.
 **Rationale:** Unifying alpha into the color tuple is more intuitive (standard in graphics APIs) and enables transparency gradients in trajectories.
 
-**Color format:**
-- `[R, G, B]` → auto-converted to `[R, G, B, 255]` (fully opaque)
-- `[R, G, B, A]` → used directly (A: 0=transparent, 255=opaque)
+**Supported input formats (via `parse_color()`):**
+| Format | Example | Output |
+|--------|---------|--------|
+| RGB list/tuple | `[255, 0, 0]` | `(255, 0, 0, 255)` |
+| RGBA list/tuple | `[255, 0, 0, 128]` | `(255, 0, 0, 128)` |
+| Hex string | `"#FF0000"` or `"#FF000080"` | `(255, 0, 0, 255)` or `(255, 0, 0, 128)` |
+| Float RGB | `[1.0, 0.0, 0.0]` | `(255, 0, 0, 255)` |
+| Float RGBA | `[1.0, 0.0, 0.0, 0.5]` | `(255, 0, 0, 128)` |
+| CSV string | `"255,0,0"` or `"(255, 0, 0)"` | `(255, 0, 0, 255)` |
+
+**Internal representation:** Always `Tuple[int, int, int, int]` (RGBA, 0-255).
 
 **Affected fields:**
 - `RigidBodyStyle.color` - shape fill color with transparency
@@ -258,31 +310,26 @@ class RigidBody:
 - `TrajectoryStyle.color` - solid color mode (when not "gradient")
 - `TrajectoryStyle.gradient_start` - gradient from (supports alpha fade)
 - `TrajectoryStyle.gradient_end` - gradient to (supports alpha fade)
-
-**Example - fade-out trajectory:**
-```yaml
-trajectory:
-  color: gradient
-  gradient_start: [255, 0, 0, 255]   # Opaque red at current position
-  gradient_end: [255, 0, 0, 0]       # Fully transparent at trail end
-```
+- `DrawPrimitive.color` - drawing overlay color
 
 **Removed:** Separate `alpha` field from `RigidBodyStyle` (merged into `color[3]`)
 
 #### ADR-9: Command Submodule Architecture
 **Decision:** Commands as extensible submodule with layered structure
-**Rationale:** Core commands for researchers (intuitive, fast). Future pygame-level commands separate. User custom commands easy to add.
+**Rationale:** Core commands for researchers (intuitive, fast). User custom commands easy to add.
 ```
 commands/
-├── __init__.py            # Registry + @register_command
-├── base.py                # Base infrastructure
-├── prebuilt/              # Researcher-friendly commands
-│   ├── rigidbody_commands.py
-│   ├── field_commands.py
-│   ├── scene_commands.py
-│   └── debug_commands.py
-└── pygame/                # Future: low-level pygame commands
-    └── __init__.py
++-- __init__.py            # Registry + @register_command
++-- base.py                # Base infrastructure (CommandRegistry)
++-- prebuilt/              # Researcher-friendly commands
+    +-- __init__.py        # Auto-imports all command modules
+    +-- rigidbody_commands.py
+    +-- field_commands.py
+    +-- scene_commands.py
+    +-- debug_commands.py
+    +-- asset_commands.py
+    +-- mocap_commands.py
+    +-- drawing_commands.py
 ```
 
 **User custom command example:**
@@ -305,59 +352,46 @@ def my_custom_display(scene, name: str, special_param: float):
 **Storage Structure:**
 ```
 ~/.local/share/projector_display/           # Persistent storage (XDG_DATA_HOME)
-├── calibration.yaml                        # Global screen calibration (required)
-└── scenes/
-    └── {scene_name}/                       # Saved scene
-        ├── scene.yaml                      # Generated from Scene.to_dict()
-        └── images/
-            └── arena.png                   # Original filenames preserved
++-- calibration.yaml                        # Global screen calibration (required)
++-- scenes/
+    +-- {scene_name}/                       # Saved scene
+        +-- scene.yaml                      # Generated from Scene.to_dict()
+        +-- images/
+            +-- arena.png                   # Original filenames preserved
 
 /tmp/projector_display/{session_id}/        # Ephemeral working directory
-└── images/
-    └── arena.png                           # Temp uploads during session
++-- images/
+    +-- arena.png                           # Temp uploads during session
 ```
 
 **Workflow:**
 1. **Server Start**: Create temp session dir `/tmp/projector_display/{uuid}/`
 2. **Working Phase**: Images uploaded to temp `images/` folder
-3. **dump_scene("name")**: Copy temp folder → persistent location, generate `scene.yaml`
+3. **save_scene("name")**: Copy temp folder -> persistent location, generate `scene.yaml`
 
 **Image Upload Protocol:**
 ```
 Client                                      Server
-  │                                           │
-  │  set_field_background                     │
-  │  {field, image: "arena.png",              │
-  │   hash: "a1b2...", alpha: 200}            │
-  │ ─────────────────────────────────────────►│
-  │                                           │ Check: exists? hash match?
-  │  Response (one of):                       │
-  │  ◄─────────────────────────────────────── │
-  │                                           │
-  │  Case A: {need_upload: false,             │  # Hash matches
-  │           message: "...already exists..."}│
-  │                                           │
-  │  Case B: {need_upload: true,              │  # File not found
-  │           reason: "not_found",            │
-  │           message: "...not found..."}     │
-  │                                           │
-  │  Case C: {need_upload: true,              │  # Hash mismatch
-  │           reason: "hash_mismatch",        │
-  │           message: "...differs (will replace)"}
-  │                                           │
-  │  upload_image {name, data: base64}        │  # If need_upload
-  │ ─────────────────────────────────────────►│
-  │                                           │
-  │  {status: success,                        │
-  │   action: "created" | "replaced",         │
-  │   message: "Saved/Replaced 'arena.png'"}  │
-  │ ◄─────────────────────────────────────────│
+  |                                           |
+  |  set_field_background                     |
+  |  {field, image: "arena.png",              |
+  |   hash: "a1b2...", alpha: 200}            |
+  | ----------------------------------------->|
+  |                                           | Check: exists? hash match?
+  |  Response (one of):                       |
+  |  <----------------------------------------|
+  |                                           |
+  |  Case A: {need_upload: false}             |  # Hash matches
+  |  Case B: {need_upload: true,              |  # File not found
+  |           reason: "not_found"}            |
+  |  Case C: {need_upload: true,              |  # Hash mismatch
+  |           reason: "hash_mismatch"}        |
+  |                                           |
+  |  upload_image {name, data: base64}        |  # If need_upload
+  | ----------------------------------------->|
+  |  {status: success, action: "created"}     |
+  | <-----------------------------------------|
 ```
-
-**Logging:**
-- `INFO`: New image saved, image replaced, scene dumped
-- `WARNING`: Hash mismatch (will replace)
-- `DEBUG`: Hash match (skip upload)
 
 **scene.yaml Format:**
 ```yaml
@@ -375,7 +409,54 @@ rigidbodies:
     orientation: 0.5
     style: {shape: triangle, color: [255,0,0,150], size: 0.2}
     trajectory: {enabled: true, color: gradient, ...}
+drawings:
+  waypoint:
+    primitive: {type: circle, radius: 0.05, color: [0,255,0,200]}
+    world_x: 1.5
+    world_y: 2.0
 ```
+
+#### ADR-11: Composable Drawing Primitives
+**Decision:** Data-driven `DrawPrimitive` dataclass as the building block for both compound rigid bodies and persistent drawing overlays.
+**Rationale:** Enables user-customizable rigid body shapes and direct drawing commands without code execution over the wire. Everything stays JSON/YAML-serializable.
+
+**Two capabilities sharing one building block:**
+1. **Compound rigid body** (`shape="compound"`) - shape defined by a list of primitives in body-local coordinates
+2. **Direct drawings** - persistent overlays positioned in field coordinates, rendered every frame until removed
+
+**DrawPrimitive types:** CIRCLE, BOX, LINE, POLYGON, TEXT, ARROW
+
+**Coordinate semantics depend on context:**
+| Context | Origin | Axes | Scale |
+|---------|--------|------|-------|
+| Compound body | `(0,0)` = body center | `+x` = orientation direction | `style.size` = pixels per local unit |
+| Direct drawing | World meters | World axes | Meters (converted from field at creation) |
+
+**Compound body example:**
+```python
+# Robot with a body circle and forward-pointing arrow
+client.create_rigidbody("custom_bot", style={
+    "shape": "compound",
+    "size": 0.1,
+    "draw_list": [
+        {"type": "circle", "x": 0, "y": 0, "radius": 1.0,
+         "color": [0, 100, 255, 200], "filled": True},
+        {"type": "arrow", "x": 0, "y": 0, "x2": 1.5, "y2": 0,
+         "color": [255, 255, 255, 255], "thickness": 3}
+    ]
+})
+```
+
+**Direct drawing example:**
+```python
+# Draw a circle at position (1.5, 2.0) in field "experiment"
+client.draw_circle("marker_1", x=1.5, y=2.0, radius=0.05,
+                   color=[0, 255, 0, 200], field="experiment")
+```
+
+**Persistence:** Direct drawings persist across frames until explicitly removed via `remove_drawing` or `clear_drawings`. Compound body primitives are part of `RigidBodyStyle` and persist with the rigid body.
+
+**Serialization:** Both `DrawPrimitive` and `Drawing` have `to_dict()`/`from_dict()` for JSON/YAML round-trips. Scene serialization includes drawings.
 
 ### Pre-mortem Prevention Measures
 
@@ -384,14 +465,21 @@ Critical safeguards identified through failure analysis:
 #### Debug Utility Layers
 Two togglable overlay layers for on-demand debugging:
 1. **Grid Layer**: Shows coordinate grid over display area
-2. **Experiment Field Layer**: Shows boundaries of all registered fields with labels
+   - Major lines at 1.0m intervals (thicker)
+   - Minor lines at 0.1m intervals (thinner, togglable)
+   - Coordinate labels at major intersections
+   - Origin marker (yellow crosshair)
+2. **Field Layer**: Shows boundaries of all registered fields with labels
+   - Field boundary polygons (yellow)
+   - Corner markers with labels (BL, BR, TR, TL)
+   - Field name label inside top-left corner, rotated to match field's top edge orientation
 
-Commands: `toggle_grid_layer`, `toggle_field_layer`
+Commands: `toggle_grid_layer`, `toggle_field_layer`, `set_grid_layer`, `set_field_layer`, `configure_grid_layer`
 
 #### Calibration File Integrity (REQUIRED)
 **The "screen" field is set via a cached calibration YAML file. This file is REQUIRED - if not present, server cannot start.**
 
-The cache file is immediately synced whenever user sets the 4-corner world↔screen coordinate relationship.
+The cache file is immediately synced whenever user sets the 4-corner world<->screen coordinate relationship.
 
 ```yaml
 # calibration.yaml (cached, auto-synced)
@@ -410,7 +498,7 @@ created: "2026-01-27T10:00:00"
 On field registration, validate vertices form counter-clockwise polygon. Warn/reject if clockwise order detected.
 
 #### Error Handling Policy
-- **Malformed commands (bad JSON, missing params, invalid values):** Never crash. Log error, return informative error response (no strict schema, but must help user identify the problem), continue running.
+- **Malformed commands (bad JSON, missing params, invalid values):** Never crash. Log error, return informative error response, continue running.
 - **Unhandled exceptions (bugs in command handlers, system errors):** Let them crash the server. Do not attempt recovery. This makes bugs visible immediately.
 
 #### Orientation Safety
@@ -427,338 +515,559 @@ On field registration, validate vertices form counter-clockwise polygon. Warn/re
 #### MoCap Safety
 - **Non-blocking connect:** 2s timeout, retry in background thread
 - **Decoupled rates:** MoCap updates internal state; render loop reads at its own rate
-- **Thread-safe:** Use `threading.Lock` or `queue.Queue` for MoCap → render communication
+- **Thread-safe:** Use `threading.Lock` for MoCap -> render communication
+- **Tracking lost indicator:** Thick red outline on rigid body when MoCap signal lost
+
+#### Thread Safety Model
+- **Snapshot pattern:** Render loop works on deep copies (`get_rigidbodies_snapshot()`, `get_fields_snapshot()`, `get_drawings_snapshot()`) to avoid locking during render
+- **Single lock:** `threading.Lock` protects all scene state mutations
+- **ThreadPoolExecutor:** Command handlers run in thread pool (max 10 workers), auto-cleanup on shutdown
 
 ## Project Structure
 
 ```
 ProjectorDisplay/
-├── _reference/                    # Symlink to old code (read-only)
-├── _bmad-output/                  # BMAD artifacts
-├── MocapUtility/                  # Git submodule (optional)
-│
-├── projector_display/             # Main package
-│   ├── __init__.py
-│   ├── server.py                  # Display server entry point
-│   ├── client.py                  # Client library
-│   ├── storage.py                 # Storage manager (ADR-10)
-│   │
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── field_calibrator.py    # Copied + extended from reference
-│   │   ├── scene.py               # Scene management
-│   │   └── rigidbody.py           # RigidBody dataclass + styles
-│   │
-│   ├── commands/                  # Command submodule
-│   │   ├── __init__.py            # Registry + @register_command
-│   │   ├── base.py                # Base command infrastructure
-│   │   ├── prebuilt/              # Prebuilt commands (researcher-friendly)
-│   │   │   ├── __init__.py
-│   │   │   ├── rigidbody_commands.py
-│   │   │   ├── field_commands.py
-│   │   │   ├── scene_commands.py
-│   │   │   ├── debug_commands.py
-│   │   │   ├── asset_commands.py  # Image upload/background (ADR-10)
-│   │   │   └── mocap_commands.py  # MoCap integration (Task 6.2)
-│   │   └── pygame/                # Future: low-level pygame commands
-│   │       └── __init__.py
-│   │
-│   ├── mocap/                     # MoCap integration (Task 6.2)
-│   │   ├── __init__.py
-│   │   └── tracker.py             # MocapTracker, MocapConfig
-│   │
-│   ├── rendering/
-│   │   ├── __init__.py
-│   │   ├── renderer.py            # Renderer protocol + PygameRenderer
-│   │   ├── primitives.py          # Shape drawing
-│   │   ├── trajectory.py          # Trajectory rendering
-│   │   ├── background.py          # Field background rendering (ADR-10)
-│   │   └── debug_layers.py        # Grid + field overlay
-│   │
-│   └── utils/
-│       ├── __init__.py
-│       └── logging.py             # Dual-sink logging
-│
-├── config/
-│   └── server_config.yaml         # Default server config
-│
-├── examples/
-│   └── basic_usage.py             # Example client usage
-│
-└── pyproject.toml                 # Python >3.10
++-- _reference/                    # Symlink to old code (read-only)
++-- _bmad-output/                  # BMAD artifacts
++-- external/
+|   +-- MocapUtility/              # Git submodule (optional, OptiTrack)
+|
++-- projector_display/             # Main package
+|   +-- __init__.py                # Package exports
+|   +-- server.py                  # Display server entry point (~763 lines)
+|   +-- client.py                  # Client library (~736 lines)
+|   +-- storage.py                 # Storage manager (ADR-10, ~254 lines)
+|   |
+|   +-- core/
+|   |   +-- __init__.py            # Exports: Scene, RigidBody, Field, DrawPrimitive, Drawing, etc.
+|   |   +-- field_calibrator.py    # Copied + extended from reference (~411 lines)
+|   |   +-- scene.py               # Scene management (~477 lines)
+|   |   +-- rigidbody.py           # RigidBody, RigidBodyStyle, TrajectoryStyle (~356 lines)
+|   |   +-- draw_primitive.py      # DrawPrimitive, DrawPrimitiveType, Drawing (ADR-11, ~176 lines)
+|   |
+|   +-- commands/                  # Command submodule (ADR-9)
+|   |   +-- __init__.py            # Registry + @register_command
+|   |   +-- base.py                # CommandRegistry class (~134 lines)
+|   |   +-- prebuilt/              # Prebuilt commands (researcher-friendly)
+|   |       +-- __init__.py        # Auto-imports all command modules
+|   |       +-- rigidbody_commands.py  # RigidBody CRUD (~219 lines)
+|   |       +-- field_commands.py      # Field management (~250 lines)
+|   |       +-- scene_commands.py      # Scene operations + persistence (~390 lines)
+|   |       +-- debug_commands.py      # Debug layer toggles (~138 lines)
+|   |       +-- asset_commands.py      # Image upload/management (ADR-10, ~303 lines)
+|   |       +-- mocap_commands.py      # MoCap integration (~150 lines)
+|   |       +-- drawing_commands.py    # Drawing overlays (ADR-11, ~283 lines)
+|   |
+|   +-- mocap/                     # MoCap integration (optional)
+|   |   +-- __init__.py
+|   |   +-- tracker.py             # MocapTracker, MocapConfig (~100 lines)
+|   |
+|   +-- rendering/
+|   |   +-- __init__.py
+|   |   +-- renderer.py            # Renderer protocol + PygameRenderer (~387 lines)
+|   |   +-- primitives.py          # Shape drawing + compound rendering (~574 lines)
+|   |   +-- trajectory.py          # Trajectory rendering (~257 lines)
+|   |   +-- background.py          # Field background rendering (ADR-10, ~205 lines)
+|   |   +-- debug_layers.py        # Grid + field debug overlays
+|   |
+|   +-- utils/
+|       +-- __init__.py
+|       +-- logging.py             # Dual-sink logging
+|       +-- color.py               # Color parsing (ADR-8, ~196 lines)
+|
++-- config/
+|   +-- server_config.yaml         # Default server config
+|   +-- calibration_example.yaml   # Calibration template
+|
++-- examples/
+|   +-- basic_usage.py             # Example client usage
+|
++-- pyproject.toml                 # Python >3.10, MIT license
 ```
+
+## Data Model
+
+### Core Entities
+
+#### RigidBody
+First-class displayable entity supporting robots, payloads, any tracked object.
+
+**Position sources (priority order):**
+1. MoCap-driven (when `auto_track=True` and connected)
+2. Manual position (set via commands)
+3. None (not yet positioned)
+
+```python
+@dataclass
+class RigidBody:
+    name: str
+    position: Optional[Tuple[float, float]] = None      # Manual (world coords, meters)
+    orientation: Optional[float] = None                  # Manual (radians)
+    _mocap_position: Optional[Tuple[float, float]]       # MoCap-driven (runtime)
+    _mocap_orientation: Optional[float]                   # MoCap-driven (runtime)
+    auto_track: bool = False
+    tracking_lost: bool = False
+    mocap_name: Optional[str] = None
+    style: RigidBodyStyle
+    trajectory_style: TrajectoryStyle
+    position_history: deque                              # For trajectory rendering
+```
+
+#### RigidBodyStyle
+```python
+@dataclass
+class RigidBodyStyle:
+    shape: RigidBodyShape       # CIRCLE, BOX, TRIANGLE, POLYGON, COMPOUND
+    size: float = 0.1           # Size in meters
+    color: RGBA = (0, 0, 255, 255)
+    label: bool = True
+    label_offset: (float, float) = (0, -0.2)   # Meters
+    orientation_length: float = 0.15            # Arrow length in meters
+    orientation_color: RGBA = (255, 255, 255, 255)
+    orientation_thickness: int = 2              # Pixels
+    polygon_vertices: Optional[List[(float, float)]]  # For POLYGON shape
+    draw_list: Optional[List[DrawPrimitive]]           # For COMPOUND shape (ADR-11)
+```
+
+**Shape types:**
+| Shape | Description | Orientation |
+|-------|------------|-------------|
+| CIRCLE | Circle with border | No rotation, arrow shows direction |
+| BOX | Square, rotated by orientation | Rotated |
+| TRIANGLE | Equilateral, points in orientation direction | Rotated |
+| POLYGON | Custom vertices, relative to center | Rotated |
+| COMPOUND | List of DrawPrimitives in body-local coords | All sub-primitives rotated |
+
+#### TrajectoryStyle
+```python
+@dataclass
+class TrajectoryStyle:
+    enabled: bool = True
+    mode: str = "time"          # "time" or "distance"
+    length: float = 5.0         # Seconds or meters
+    style: str = "solid"        # "solid", "dotted", "dashed"
+    thickness: int = 2          # Pixels
+    color: RGBA | "gradient"    # Solid color or gradient mode
+    gradient_start: RGBA        # Near body (RGBA, supports alpha)
+    gradient_end: RGBA          # At tail (RGBA, supports alpha fade)
+    dot_spacing: float = 0.05   # Meters (dotted)
+    dash_length: float = 0.1    # Meters (dashed)
+```
+
+#### DrawPrimitive (ADR-11)
+```python
+class DrawPrimitiveType(Enum):
+    CIRCLE, BOX, LINE, POLYGON, TEXT, ARROW
+
+@dataclass
+class DrawPrimitive:
+    type: DrawPrimitiveType
+    x: float = 0.0             # Position / offset
+    y: float = 0.0
+    x2: float = 0.0            # LINE/ARROW end point
+    y2: float = 0.0
+    radius: float = 0.05       # CIRCLE
+    width: float = 0.1         # BOX
+    height: float = 0.1        # BOX
+    angle: float = 0.0         # BOX local rotation (radians)
+    vertices: Optional[List]   # POLYGON
+    text: str = ""             # TEXT
+    font_size: int = 24        # TEXT
+    color: RGBA = (255, 255, 255, 255)
+    thickness: int = 0         # 0=filled, >0=outline width (pixels)
+    filled: bool = True
+```
+
+#### Drawing
+```python
+@dataclass
+class Drawing:
+    """Persistent screen overlay, rendered every frame until removed."""
+    id: str
+    primitive: DrawPrimitive
+    world_x: float = 0.0       # Anchor in world coords
+    world_y: float = 0.0
+    world_x2: float = 0.0      # LINE/ARROW second endpoint
+    world_y2: float = 0.0
+```
+
+#### Field
+```python
+@dataclass
+class Field:
+    name: str
+    world_points: np.ndarray   # 4x2 [BL, BR, TR, TL] in meters
+    local_points: np.ndarray   # 4x2 [BL, BR, TR, TL] in local coords
+    background_image: Optional[str]     # Image filename
+    background_color: Optional[RGB]     # Solid color
+    background_alpha: int = 255         # Opacity 0-255
+```
+
+## Rendering Pipeline
+
+**Frame render order** (in `ProjectorDisplayServer.render_frame()`):
+
+```
+1. Clear screen (background color)
+2. Field backgrounds (perspective-warped images / solid colors)
+3. Debug layers (grid + field boundaries, if enabled)
+4. For each RigidBody (snapshot):
+   a. Trajectory (if enabled) - drawn behind body
+   b. Body shape (circle/box/triangle/polygon/compound)
+   c. Tracking lost indicator (red outline, if MoCap lost)
+   d. Orientation arrow
+   e. Name label
+5. Persistent drawings (snapshot)
+6. Flip display
+```
+
+**Coordinate transform pipeline:**
+```
+Field coords (command input)
+  --> world_to_screen() via FieldCalibrator
+    --> screen pixels (rendering)
+```
+
+**Key transform functions:**
+- `world_to_screen(x, y)` - Convert world meters to screen pixels via "screen" field
+- `meters_to_pixels(meters)` - Approximate scale conversion using world bounds
+- `transform_orientation(field, position, orientation)` - Two-point angle transform
+
+## Command Reference
+
+### RigidBody Commands (`rigidbody_commands.py`)
+
+| Command | Parameters | Description |
+|---------|-----------|-------------|
+| `create_rigidbody` | `name, style?, trajectory?, mocap_name?, auto_track?` | Create rigid body (required before updates) |
+| `remove_rigidbody` | `name` | Remove rigid body |
+| `update_position` | `name, x, y, orientation?, field?` | Update position (auto-creates if missing) |
+| `update_style` | `name, shape?, size?, color?, label?, ...` | Update visualization style |
+| `update_trajectory` | `name, enabled?, mode?, length?, style?, ...` | Update trajectory settings |
+| `get_rigidbody` | `name` | Inspect state (includes runtime info) |
+| `list_rigidbodies` | - | List all rigid body names |
+
+### Field Commands (`field_commands.py`)
+
+| Command | Parameters | Description |
+|---------|-----------|-------------|
+| `create_field` | `name, world_points, local_points` | Register coordinate frame |
+| `remove_field` | `name` | Remove field (except "screen") |
+| `list_fields` | - | List all field names |
+| `get_field` | `name` | Field info with points |
+| `set_field_background` | `field, image, alpha?` | Set image background (ADR-10) |
+| `remove_field_background` | `field` | Clear background |
+| `set_field_background_color` | `field, color, alpha?` | Set solid color background |
+
+### Drawing Commands (`drawing_commands.py`, ADR-11)
+
+| Command | Parameters | Description |
+|---------|-----------|-------------|
+| `draw_circle` | `id, x, y, radius, color?, field?, filled?, thickness?` | Persistent circle overlay |
+| `draw_box` | `id, x, y, width, height, color?, field?, filled?, thickness?, angle?` | Persistent box overlay |
+| `draw_line` | `id, x1, y1, x2, y2, color?, thickness?, field?` | Persistent line overlay |
+| `draw_arrow` | `id, x1, y1, x2, y2, color?, thickness?, field?` | Persistent arrow overlay |
+| `draw_polygon` | `id, vertices, color?, field?, filled?, thickness?` | Persistent polygon overlay |
+| `draw_text` | `id, x, y, text, color?, font_size?, field?` | Persistent text overlay |
+| `remove_drawing` | `id` | Remove a drawing by ID |
+| `list_drawings` | - | List all drawing IDs |
+| `clear_drawings` | - | Remove all drawings |
+
+### Scene Commands (`scene_commands.py`)
+
+| Command | Parameters | Description |
+|---------|-----------|-------------|
+| `clear_scene` | - | Remove all rigid bodies (keep fields) |
+| `clear_all` | - | Remove everything except "screen" field |
+| `dump_scene` | - | Export scene state as dict |
+| `get_scene` | - | Full scene state inspection |
+| `load_scene` | `scene_data` | Restore scene from dict |
+| `status` | - | Server status (MoCap, fields, bodies) |
+| `save_scene` | `name` | Save to persistent storage (ADR-10) |
+| `load_scene_from_file` | `name` | Load from persistent storage |
+| `list_saved_scenes` | - | List saved scene names |
+| `delete_saved_scene` | `name` | Delete saved scene |
+
+### Debug Commands (`debug_commands.py`)
+
+| Command | Parameters | Description |
+|---------|-----------|-------------|
+| `toggle_grid_layer` | - | Toggle grid visibility |
+| `toggle_field_layer` | - | Toggle field boundaries |
+| `set_grid_layer` | `enabled` | Explicitly set grid state |
+| `set_field_layer` | `enabled` | Explicitly set field state |
+| `configure_grid_layer` | `show_minor?, major_color?, minor_color?` | Configure grid appearance |
+| `get_grid_settings` | - | Get current grid settings |
+
+### Asset Commands (`asset_commands.py`, ADR-10)
+
+| Command | Parameters | Description |
+|---------|-----------|-------------|
+| `check_image` | `name, hash` | Check if image exists with matching hash |
+| `upload_image` | `name, data` | Upload base64-encoded image |
+| `list_images` | - | List uploaded image names |
+| `delete_image` | `name` | Delete uploaded image |
+
+### MoCap Commands (`mocap_commands.py`)
+
+| Command | Parameters | Description |
+|---------|-----------|-------------|
+| `set_mocap` | `ip?, port?, enabled?` | Configure MoCap connection |
+| `enable_mocap` | - | Enable MoCap tracking |
+| `disable_mocap` | - | Disable MoCap tracking |
+| `get_mocap_status` | - | Connection and tracking status |
+| `get_mocap_bodies` | - | List available MoCap bodies |
+| `set_auto_track` | `name, mocap_name?, enabled?` | Configure per-body tracking |
+| `enable_tracking` | `name` | Enable tracking for body |
+| `disable_tracking` | `name` | Disable tracking for body |
+
+## Client API
+
+The `DisplayClient` class provides a Python API mirroring all server commands.
+
+### Connection
+```python
+from projector_display.client import DisplayClient
+
+# Context manager (auto-connect/disconnect)
+with DisplayClient("localhost", 9999) as client:
+    client.create_rigidbody("robot1", style={"shape": "circle", "size": 0.1})
+    client.update_position("robot1", 1.0, 2.0, field="experiment")
+
+# Manual connection
+client = DisplayClient("localhost", 9999)
+client.connect()
+# ... use client ...
+client.disconnect()
+```
+
+### Method Categories
+
+**RigidBody:** `create_rigidbody`, `remove_rigidbody`, `update_position`, `update_style`, `update_trajectory`, `get_rigidbody`, `list_rigidbodies`
+
+**Field:** `create_field`, `remove_field`, `list_fields`, `get_field`
+
+**Drawing (ADR-11):** `draw_circle`, `draw_box`, `draw_line`, `draw_arrow`, `draw_polygon`, `draw_text`, `remove_drawing`, `list_drawings`, `clear_drawings`
+
+**Scene:** `clear_scene`, `clear_all`, `dump_scene`, `get_scene`, `load_scene`, `status`
+
+**Storage (ADR-10):** `save_scene`, `load_scene_from_file`, `list_saved_scenes`, `delete_saved_scene`
+
+**Assets (ADR-10):** `check_image`, `upload_image`, `list_images`, `delete_image`, `set_field_background` (high-level: handles hash check + upload + assign), `remove_field_background`
+
+**Debug:** `toggle_grid_layer`, `toggle_field_layer`, `set_grid_layer`, `set_field_layer`, `configure_grid_layer`, `get_grid_settings`
+
+**MoCap:** `set_mocap`, `enable_mocap`, `disable_mocap`, `get_mocap_status`, `get_mocap_bodies`, `set_auto_track`, `enable_tracking`, `disable_tracking`
+
+## Server Architecture
+
+### Threading Model
+
+```
+Main Thread (render loop)
+  +-- 30 Hz render cycle
+  +-- pygame event handling (keyboard, window)
+  +-- Reads snapshots of scene state
+
+Socket Server Thread (daemon)
+  +-- Accepts TCP connections
+  +-- Spawns handler per client
+
+Client Handler Threads (ThreadPoolExecutor, max 10)
+  +-- Reads JSON commands
+  +-- Executes via CommandRegistry
+  +-- Returns JSON responses
+
+MoCap Thread (daemon, optional)
+  +-- 30 Hz polling
+  +-- Updates _mocap_position on RigidBodies
+  +-- Detects tracking loss
+```
+
+### Command Execution Flow
+
+```
+Client sends JSON over TCP
+    |
+Server._handle_client() reads newline-delimited message
+    |
+Server._process_command() extracts "action" + params
+    |
+CommandRegistry.execute(action, scene, **params)
+    |
+Handler function executes (mutates scene under lock)
+    |
+Response dict returned, JSON-encoded, sent back
+    |
+Client receives response
+```
+
+### Initialization Sequence
+
+1. Parse CLI arguments (`--config`, `--calibration`, `--verbose`, `--port`, `--host`)
+2. Initialize storage manager (session temp dir)
+3. Load server config (YAML)
+4. Load calibration (creates "screen" field) - **REQUIRED, exits if missing**
+5. Initialize PygameRenderer (fullscreen on target display)
+6. Register all commands (auto-import `prebuilt/`)
+7. Start socket server thread (daemon)
+8. Enter render loop
+
+### Shutdown
+
+- Graceful on SIGTERM/SIGINT (first signal)
+- Force exit on second signal
+- Cleanup: socket close, thread pool shutdown, pygame quit, storage session cleanup
+
+### Default Settings
+
+| Setting | Default |
+|---------|---------|
+| Port | 9999 |
+| Host | 0.0.0.0 |
+| FPS | 30 |
+| Background color | Black (0, 0, 0) |
+| Screen index | 0 |
 
 ## Implementation Plan
 
 ### Tasks
 
 #### Phase 1: Project Setup
-- [ ] **Task 1.1:** Create project structure and pyproject.toml
-  - File: `pyproject.toml`
-  - Action: Define project metadata, Python >3.10 requirement, dependencies (pygame, opencv-python, pyyaml)
-  - Notes: Include dev dependencies for testing
-
-- [ ] **Task 1.2:** Initialize package structure with __init__.py files
-  - Files: All `__init__.py` files in package structure
-  - Action: Create empty/minimal init files to establish package hierarchy
-  - Notes: `projector_display/__init__.py` should expose main classes
-
-- [ ] **Task 1.3:** Add MocapUtility as git submodule
-  - Action: `git submodule add https://github.com/chkxw/MocapUtility.git MocapUtility`
-  - Notes: Optional dependency, lazy-loaded
+- [x] **Task 1.1:** Create project structure and pyproject.toml
+- [x] **Task 1.2:** Initialize package structure with __init__.py files
+- [x] **Task 1.3:** Add MocapUtility as external dependency
 
 #### Phase 2: Core Layer
-- [ ] **Task 2.1:** Copy and extend FieldCalibrator
-  - File: `projector_display/core/field_calibrator.py`
-  - Action: Copy from `_reference/field_calibrator.py`, rename `real_points` → `world_points`, `virtual_points` → `local_points`, add `transform_orientation()` method
-  - Notes: Critical - this is the foundation of all coordinate transforms
-
-- [ ] **Task 2.2:** Implement RigidBody and styles
-  - File: `projector_display/core/rigidbody.py`
-  - Action: Create `RigidBody` dataclass with position, optional orientation, fallback logic. Create `RigidBodyStyle` and `TrajectoryStyle` dataclasses
-  - Notes: Reference `_reference/display_toolbox.py` for style fields
-  - **Color format (ADR-8):** All colors are RGBA tuples. RGB input auto-converts to RGBA with alpha=255.
-    - `RigidBodyStyle.color`: RGBA for shape fill (no separate alpha field)
-    - `TrajectoryStyle.gradient_start/end`: RGBA for opacity fade support
-  - **Trajectory modes:**
-    - `mode: time, length: 5.0` = show all positions from last 5 seconds
-    - `mode: distance, length: 1.0` = show trajectory of fixed 1 meter length
-
-- [ ] **Task 2.3:** Implement Scene management
-  - File: `projector_display/core/scene.py`
-  - Action: Create `Scene` class holding FieldCalibrator and RigidBodies dict. Implement `to_dict()` for YAML serialization
-  - Notes: Single scene per server instance
+- [x] **Task 2.1:** Copy and extend FieldCalibrator (`world_points`/`local_points` terminology, `transform_orientation()`)
+- [x] **Task 2.2:** Implement RigidBody, RigidBodyStyle, TrajectoryStyle with RGBA colors (ADR-8)
+- [x] **Task 2.3:** Implement Scene management (thread-safe, snapshot-based)
 
 #### Phase 3: Rendering Layer
-- [ ] **Task 3.1:** Implement Renderer protocol and PygameRenderer
-  - File: `projector_display/rendering/renderer.py`
-  - Action: Define `Renderer` Protocol, implement `PygameRenderer` with fullscreen init, draw methods, flip
-  - Notes: Always fullscreen, explicit screen_index
-
-- [ ] **Task 3.2:** Implement shape primitives
-  - File: `projector_display/rendering/primitives.py`
-  - Action: Implement `draw_circle`, `draw_box`, `draw_triangle`, `draw_polygon` with rotation support. ALL must use transformed orientation via single render path
-  - Notes: Reference `_reference/display_toolbox.py` draw methods
-
-- [ ] **Task 3.3:** Implement trajectory rendering
-  - File: `projector_display/rendering/trajectory.py`
-  - Action: Implement trajectory drawing with solid/dotted/dashed styles, gradient support
-  - Notes: History trails only for v1
-
-- [ ] **Task 3.4:** Implement debug layers
-  - File: `projector_display/rendering/debug_layers.py`
-  - Action: Implement `GridLayer` and `FieldLayer` classes, togglable overlay rendering
-  - Notes: Grid shows world coordinates, FieldLayer shows all registered field boundaries
+- [x] **Task 3.1:** Implement Renderer protocol and PygameRenderer (fullscreen, multi-display, alpha methods)
+- [x] **Task 3.2:** Implement shape primitives (circle, box, triangle, polygon) with RGBA + rotation
+- [x] **Task 3.3:** Implement trajectory rendering (solid, dotted, dashed with RGBA gradients)
+- [x] **Task 3.4:** Implement debug layers (GridLayer with minor/major lines, FieldLayer with rotated labels)
 
 #### Phase 4: Commands Infrastructure
-- [ ] **Task 4.1:** Implement command registry and decorator
-  - File: `projector_display/commands/base.py`
-  - Action: Create `CommandRegistry` class, `@register_command` decorator that adds to registry
-  - Notes: Decorator only registers, no hidden behavior
-
-- [ ] **Task 4.2:** Setup commands module with auto-discovery
-  - File: `projector_display/commands/__init__.py`
-  - Action: Export `register_command`, auto-import all `core/` commands on module load
-  - Notes: Make custom command registration easy
+- [x] **Task 4.1:** Implement command registry and `@register_command` decorator
+- [x] **Task 4.2:** Setup commands module with auto-discovery
 
 #### Phase 5: Core Commands
-- [ ] **Task 5.1:** Implement RigidBody commands
-  - File: `projector_display/commands/prebuilt/rigidbody_commands.py`
-  - Action: Implement `create_rigidbody`, `remove_rigidbody`, `update_position`, `update_style`, `update_trajectory`, `get_rigidbody`
-  - Notes: All position commands must specify `field` parameter
-
-- [ ] **Task 5.2:** Implement Field commands
-  - File: `projector_display/commands/prebuilt/field_commands.py`
-  - Action: Implement `create_field`, `remove_field`, `list_fields`
-  - Notes: Validate vertex order on create (counter-clockwise)
-
-- [ ] **Task 5.3:** Implement Scene commands
-  - File: `projector_display/commands/prebuilt/scene_commands.py`
-  - Action: Implement `clear_scene`, `dump_scene`, `get_scene`, `load_calibration`
-  - Notes: `dump_scene` returns YAML-serializable dict
-
-- [ ] **Task 5.4:** Implement Debug commands
-  - File: `projector_display/commands/prebuilt/debug_commands.py`
-  - Action: Implement `toggle_grid_layer`, `toggle_field_layer`
-  - Notes: Simple boolean toggles
+- [x] **Task 5.1:** Implement RigidBody commands (create, remove, update_position, update_style, update_trajectory, get, list)
+- [x] **Task 5.2:** Implement Field commands (create, remove, list, get, backgrounds)
+- [x] **Task 5.3:** Implement Scene commands (clear, dump, get, load, save, status)
+- [x] **Task 5.4:** Implement Debug commands (toggle, set, configure grid)
 
 #### Phase 6: Server
-- [ ] **Task 6.1:** Implement display server
-  - File: `projector_display/server.py`
-  - Action: Create main server with: config loading, socket listener (JSON/TCP), render loop, command dispatch, signal handling
-  - Notes: Reference `_reference/toolbox_display_server.py` for architecture. Never crash on bad commands.
-
-- [x] **Task 6.2:** Add MoCap integration (optional)
-  - Files: `projector_display/mocap/tracker.py`, `projector_display/commands/prebuilt/mocap_commands.py`
-  - Action: Lazy-load MocapUtility, background polling at 30Hz, thread-safe position updates, per-rigidbody auto_track
-  - Commands: `set_mocap`, `enable_mocap`, `disable_mocap`, `get_mocap_status`, `get_mocap_bodies`, `set_auto_track`, `enable_tracking`, `disable_tracking`
-  - Notes: Implemented as separate mocap package with MocapTracker class
+- [x] **Task 6.1:** Implement display server (config loading, TCP socket, render loop, command dispatch, signal handling)
+- [x] **Task 6.2:** Add MoCap integration (lazy-load, background polling, per-body tracking, tracking lost)
 
 #### Phase 7: Client Library
-- [ ] **Task 7.1:** Implement client library
-  - File: `projector_display/client.py`
-  - Action: Create `DisplayClient` class with socket connection, command methods mirroring server commands, context manager support
-  - Notes: Reference `_reference/display_client.py`
+- [x] **Task 7.1:** Implement DisplayClient (socket connection, all command methods, context manager, auto-reconnect, message buffering)
 
 #### Phase 8: Utilities & Config
-- [ ] **Task 8.1:** Implement dual-sink logging
-  - File: `projector_display/utils/logging.py`
-  - Action: Create logging setup function with stdout/stderr AND file output, configurable log levels, `--verbose` support
-  - Notes: Log to `/var/log/projector_display.log` if writable, else fallback to `/tmp/projector_display.log`
+- [x] **Task 8.1:** Implement dual-sink logging
+- [x] **Task 8.2:** Create default server config
+- [x] **Task 8.3:** Implement color parsing utility (hex, RGB, RGBA, float, CSV)
 
-- [ ] **Task 8.2:** Create default server config
-  - File: `config/server_config.yaml`
-  - Action: Create template config with display settings, socket settings, logging settings
-  - Notes: Document all options with comments
+#### Phase 9: Examples
+- [x] **Task 9.1:** Create basic usage example
 
-#### Phase 9: Examples & Documentation
-- [ ] **Task 9.1:** Create basic usage example
-  - File: `examples/basic_usage.py`
-  - Action: Demonstrate client connection, creating fields, creating rigid bodies, position updates
-  - Notes: Should be runnable standalone
+#### Phase 10: Storage & Assets (ADR-10)
+- [x] **Task 10.1:** Implement StorageManager (XDG-compliant, session temp, persistent scenes)
+- [x] **Task 10.2:** Implement asset transfer commands (check_image, upload_image, list_images, delete_image)
+- [x] **Task 10.3:** Implement field background commands (set_field_background, remove, solid color)
+- [x] **Task 10.4:** Implement field background rendering (perspective warp via OpenCV, caching)
+- [x] **Task 10.5:** Implement scene persistence (save_scene, load_scene_from_file)
+- [x] **Task 10.6:** Add client-side image upload helper (hash check, conditional upload)
 
-#### Phase 10: Interactive Visual Testing
-- [ ] **Task 10.1:** Create interactive visual test suite
-  - File: `projector_display/tests/visual_tests.py`
-  - Action: Implement interactive test runner that displays visual behaviors and prompts user for verification
-  - Tests to include:
-    - All shape primitives (circle, box, triangle, polygon)
-    - Orientation arrows at various angles
-    - Trajectory rendering (time mode, distance mode, styles)
-    - Debug layers (grid, field boundaries)
-    - Coordinate transform verification (known positions)
-  - Notes: Run with `python -m projector_display.tests.visual_tests`
+#### Phase 11: Composable Drawing Primitives (ADR-11)
+- [x] **Task 11.1:** Create `DrawPrimitive`, `DrawPrimitiveType`, `Drawing` dataclasses with serialization
+- [x] **Task 11.2:** Add `COMPOUND` to `RigidBodyShape`, `draw_list` to `RigidBodyStyle`
+- [x] **Task 11.3:** Implement compound body rendering (`draw_compound`, `_draw_single_primitive`, body-local transform)
+- [x] **Task 11.4:** Add drawings storage to Scene (CRUD, snapshots, serialization)
+- [x] **Task 11.5:** Add drawing rendering to server render loop
+- [x] **Task 11.6:** Create drawing commands (draw_circle, draw_box, draw_line, draw_arrow, draw_polygon, draw_text, remove, list, clear)
+- [x] **Task 11.7:** Add client drawing convenience methods
+- [x] **Task 11.8:** Update core exports (`__init__.py`)
 
-#### Phase 11: Storage & Assets (ADR-10)
-- [x] **Task 11.1:** Implement storage manager
-  - File: `projector_display/storage.py`
-  - Action: Create `StorageManager` class with:
-    - `get_data_dir()` → `~/.local/share/projector_display/` (XDG-compliant)
-    - `get_session_dir()` → `/tmp/projector_display/{session_id}/`
-    - `get_calibration_path()` → data_dir / `calibration.yaml`
-    - `get_scene_dir(name)` → data_dir / `scenes/{name}/`
-  - Notes: Create directories on first access if not exist
-
-- [x] **Task 11.2:** Implement asset transfer commands
-  - File: `projector_display/commands/prebuilt/asset_commands.py`
-  - Action: Implement pure asset transfer commands:
-    - `check_image(name, hash)` → check if image exists and hash matches
-    - `upload_image(name, data)` → save to session images folder
-    - `list_images()` → list all images in session
-    - `delete_image(name)` → remove image from session
-  - Response format for check_image:
-    - `{exists: true, hash_match: true}` when hash matches
-    - `{exists: true, hash_match: false, reason: "hash_mismatch"}` when differs
-    - `{exists: false, reason: "not_found"}` when not found
-  - Response format for upload_image:
-    - `{action: "created", message: "Saved 'arena.png' (102.4 KB)"}`
-    - `{action: "replaced", message: "Replaced existing 'arena.png' (102.4 KB)"}`
-  - Notes: Use SHA256 hash (first 16 chars), base64 encoding for data
-
-- [x] **Task 11.3:** Implement field background commands
-  - File: `projector_display/commands/prebuilt/field_commands.py`
-  - Action: Add background configuration to field commands:
-    - `set_field_background(field, image, alpha)` → assign uploaded image to field
-    - `remove_field_background(field)` → clear background from field
-  - Notes: Image must already be uploaded via asset_commands. This is field configuration, not asset transfer.
-
-- [x] **Task 11.4:** Implement field background rendering
-  - Files: `projector_display/core/scene.py`, `projector_display/rendering/background.py`
-  - Action:
-    - Add `background` property to Field (image path, alpha)
-    - Implement perspective warp using OpenCV `warpPerspective`
-    - Render backgrounds before rigidbodies in render loop
-  - Notes: Cache warped images to avoid re-computing each frame
-
-- [x] **Task 11.5:** Implement scene persistence
-  - Files: `projector_display/commands/prebuilt/scene_commands.py`, `projector_display/storage.py`
-  - Action: Extend `dump_scene(name)` to:
-    - Create `~/.local/share/projector_display/scenes/{name}/`
-    - Copy images from temp session dir to scene images folder
-    - Generate `scene.yaml` from `Scene.to_dict()` with image refs
-  - Notes: Use relative paths in scene.yaml (e.g., `images/arena.png`)
-
-- [x] **Task 11.6:** Implement scene loading
-  - Files: `projector_display/commands/prebuilt/scene_commands.py`
-  - Action: Implement `load_scene(name)` to:
-    - Load `scene.yaml` from persistent storage
-    - Reconstruct Scene with fields, rigidbodies, backgrounds
-    - Copy scene images to session temp dir for working
-  - Notes: Validate scene.yaml schema on load
-
-- [x] **Task 11.7:** Add client-side image helper
-  - File: `projector_display/client.py`
-  - Action: Add `set_field_background(field, image_path, alpha)` method that:
-    - Computes local file hash
-    - Calls `check_image` (asset command)
-    - Calls `upload_image` if needed (asset command)
-    - Calls `set_field_background` (field command)
-    - Logs progress and warns on replacement
-  - Notes: Client orchestrates the 3-step flow; server commands stay single-purpose
+#### Phase 12: Polish
+- [x] **Task 12.1:** Tracking lost indicator (red outline for all shapes including compound)
+- [x] **Task 12.2:** Field layer label positioning (inside top-left corner, rotated to match field edge)
+- [x] **Task 12.3:** Text rotation support in renderer (`angle` parameter)
 
 ### Acceptance Criteria
 
 #### Core Functionality
-- [ ] **AC-1:** Given a calibration file with world_points and local_points, when the server loads it, then coordinate transforms work correctly between world and screen coordinates
-- [ ] **AC-2:** Given a RigidBody with position (1.0, 2.0) in world coords, when rendered, then it appears at the correct screen position matching the calibration
-- [ ] **AC-3:** Given a RigidBody with orientation π/4, when rendered with orientation arrow, then the arrow direction is correctly transformed via two-point method
-- [ ] **AC-4:** Given orientation not provided in update, when style requires orientation, then last known orientation is used
+- [x] **AC-1:** Calibration file with world_points/local_points loads correctly, coordinate transforms work
+- [x] **AC-2:** RigidBody at world position renders at correct screen position
+- [x] **AC-3:** Orientation arrow correctly transformed via two-point method
+- [x] **AC-4:** Missing orientation falls back to last known value
 
 #### Commands & Protocol
-- [ ] **AC-5:** Given a JSON command `{"action": "create_rigidbody", "params": {"name": "robot1"}}`, when sent to server, then RigidBody is created and success response returned
-- [ ] **AC-6:** Given a malformed JSON command, when sent to server, then error response is returned and server continues running (no crash)
-- [ ] **AC-7:** Given `dump_scene` command, when executed, then returned dict can be YAML-serialized and used to recreate identical scene
+- [x] **AC-5:** JSON command creates RigidBody and returns success response
+- [x] **AC-6:** Malformed JSON returns error response, server continues (no crash)
+- [x] **AC-7:** `dump_scene` returns dict that can recreate identical scene via `load_scene`
 
 #### Field Management
-- [ ] **AC-8:** Given field vertices in clockwise order, when `create_field` called, then warning/rejection occurs
-- [ ] **AC-9:** Given custom field "experiment" registered, when position sent with `field: "experiment"`, then coordinates transform through experiment → world → screen
+- [x] **AC-8:** Clockwise vertex order produces warning/rejection
+- [x] **AC-9:** Custom field coordinates transform through field -> world -> screen chain
 
 #### Debug Layers
-- [ ] **AC-10:** Given `toggle_grid_layer` command, when executed, then grid overlay toggles on/off
-- [ ] **AC-11:** Given multiple fields registered, when field layer enabled, then all field boundaries displayed with labels
+- [x] **AC-10:** `toggle_grid_layer` toggles grid overlay with major/minor lines and labels
+- [x] **AC-11:** Field layer shows all field boundaries with rotated name labels
 
 #### Client Library
-- [ ] **AC-12:** Given DisplayClient connected, when `update_position("robot1", 1.0, 2.0)` called, then server receives and processes command
-- [ ] **AC-13:** Given DisplayClient as context manager, when block exits, then connection cleanly closed
+- [x] **AC-12:** DisplayClient sends commands and receives responses
+- [x] **AC-13:** Context manager cleanly connects and disconnects
 
 #### Error Handling
-- [ ] **AC-14:** Given unhandled exception in command handler, when it occurs, then server crashes (does not silently continue)
-- [ ] **AC-15:** Given malformed command (bad JSON, missing params), when received, then error logged and error response sent (no crash)
+- [x] **AC-14:** Unhandled exception in command handler crashes server (visible bugs)
+- [x] **AC-15:** Malformed command returns error, server continues
 
 #### Storage & Assets (ADR-10)
-- [x] **AC-16:** Given first server start, when no data dir exists, then `~/.local/share/projector_display/` is created automatically
-- [x] **AC-17:** Given client uploads image "arena.png", when same image uploaded again (same hash), then server responds `{need_upload: false}` and skips transfer
-- [x] **AC-18:** Given client uploads image "arena.png" with different content, when hash differs from existing, then server responds `{need_upload: true, reason: "hash_mismatch"}` and logs warning on replacement
-- [x] **AC-19:** Given `dump_scene("experiment1")`, when executed, then scene.yaml and images/ are saved to `~/.local/share/projector_display/scenes/experiment1/`
-- [x] **AC-20:** Given field "experiment" has background image, when rendered, then image is perspective-warped to fit field quadrilateral
-- [x] **AC-21:** Given `load_scene("experiment1")`, when executed, then scene is reconstructed with all fields, rigidbodies, and background images
+- [x] **AC-16:** Data directory created automatically on first use
+- [x] **AC-17:** Duplicate image upload (same hash) skips transfer
+- [x] **AC-18:** Changed image (hash mismatch) warns and replaces
+- [x] **AC-19:** `save_scene` persists scene.yaml and images
+- [x] **AC-20:** Field background perspective-warped to fit field quadrilateral
+- [x] **AC-21:** `load_scene_from_file` reconstructs full scene
+
+#### Drawing Primitives (ADR-11)
+- [x] **AC-22:** Compound rigid body renders multiple sub-primitives that move and rotate with body
+- [x] **AC-23:** Direct drawing commands create persistent overlays in field coordinates
+- [x] **AC-24:** `remove_drawing` and `clear_drawings` correctly remove overlays
+- [x] **AC-25:** DrawPrimitive serialization round-trips correctly via to_dict/from_dict
+- [x] **AC-26:** Scene serialization includes drawings and compound body draw_lists
+- [x] **AC-27:** Existing simple shapes (circle, box, triangle, polygon) remain backwards-compatible
 
 ## Additional Context
 
 ### Dependencies
 
 - Python >3.10 (required for MocapUtility compatibility)
-- pygame
-- OpenCV (cv2) - for FieldCalibrator perspective transforms
-- PyYAML - for configuration and scene serialization
-- MocapUtility - git submodule from `https://github.com/chkxw/MocapUtility.git` (optional)
+- pygame >=2.0.0
+- OpenCV (cv2) >=4.0.0 - for FieldCalibrator perspective transforms and background warp
+- PyYAML >=6.0 - for configuration and scene serialization
+- numpy >=1.20.0 - for coordinate transforms
+- xrandr - system dependency for multi-display positioning (Linux)
+- MocapUtility - external directory from `https://github.com/chkxw/MocapUtility.git` (optional, OptiTrack)
 
 ### Testing Strategy
 
-- **Unit tests:** Field transforms, orientation conversion, command parsing (non-graphical)
+- **Unit tests:** Field transforms, orientation conversion, command parsing, color parsing, serialization round-trips (non-graphical)
 - **Interactive visual tests:** Since graphics require human verification, implement an interactive test suite that:
-  - Displays a specific visual behavior (e.g., "Circle at position (1,1) with arrow pointing right")
+  - Displays a specific visual behavior
   - Prompts user: "Does this look correct? [y/n]"
-  - Proceeds to next test on 'y', logs failure on 'n'
-  - Covers all primitives, trajectory styles, orientation transforms, debug layers
-- **Integration tests:** Client-server communication, scene serialization (non-graphical)
-- **Post-v1 validation:** Run against old experiment code to verify coverage
-
-**Interactive test runner:** `python -m projector_display.tests.visual_tests`
+  - Covers all primitives, trajectory styles, compound bodies, orientation transforms, debug layers
+- **Integration tests:** Client-server communication, scene serialization, drawing persistence (non-graphical)
 
 ### Notes
 
 - Reference repo at `../box_push_deploy/shared/` should remain untouched for functionality comparison
 - Orientation transformation is critical fix - all angle-dependent rendering must use point conversion
-- Scene dump should produce YAML that can be converted back to commands and sent to recreate the scene
-- **Terminology update for FieldCalibrator:** When copying, rename `real_points` → `world_points`, `virtual_points` → `local_points`. "world" = common reference (meters), "local" = field-specific coords
+- Scene dump produces YAML that can be converted back to commands and sent to recreate the scene
+- **Terminology update for FieldCalibrator:** `real_points` -> `world_points`, `virtual_points` -> `local_points`. "world" = common reference (meters), "local" = field-specific coords
+- Drawing primitives are data-only - no code execution over the wire, preserving the system's security model
+- All colors internally RGBA; `parse_color()` in `utils/color.py` handles all input format conversions
