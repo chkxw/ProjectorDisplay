@@ -38,6 +38,7 @@ from projector_display.rendering.debug_layers import GridLayer, FieldLayer
 from projector_display.rendering.background import BackgroundRenderer
 from projector_display.commands import get_registry
 from projector_display.utils.logging import setup_logging, get_logger
+from projector_display.utils.profiler import FrameProfiler
 from projector_display.storage import init_storage_manager, get_storage_manager
 from projector_display.mocap import MocapTracker
 
@@ -128,6 +129,9 @@ class ProjectorDisplayServer:
         self._screen_height = 0
         self._world_bounds: Optional[Tuple[float, float, float, float]] = None
 
+        # Profiler (None = disabled, set via enable_profiling())
+        self._profiler: Optional[FrameProfiler] = None
+
         # Logger
         self.logger = get_logger(__name__)
 
@@ -161,6 +165,15 @@ class ProjectorDisplayServer:
 
         self.logger.info(f"Shutdown initiated: Received {signal_name}")
         self._running.clear()  # Thread-safe shutdown
+
+    def enable_profiling(self, interval: float = 5.0):
+        """Enable frame and command profiling with periodic log output.
+
+        Args:
+            interval: Seconds between profiling summary logs.
+        """
+        self._profiler = FrameProfiler(interval=interval)
+        self.logger.info(f"Profiling enabled (report every {interval}s)")
 
     def load_config(self) -> bool:
         """
@@ -442,9 +455,16 @@ class ProjectorDisplayServer:
             # Extract parameters (everything except action/cmd)
             params = {k: v for k, v in cmd.items() if k not in ("action", "cmd")}
 
-            # Execute via registry
+            # Execute via registry (with optional profiling)
+            p = self._profiler
+            if p:
+                t0 = time.perf_counter()
+
             registry = get_registry()
             result = registry.execute(action, self.scene, **params)
+
+            if p:
+                p.record_command(action, time.perf_counter() - t0)
 
             if self.verbose:
                 self.logger.debug(f"Command: {action}, Result: {result.get('status')}")
@@ -473,11 +493,22 @@ class ProjectorDisplayServer:
         if not self.renderer:
             return
 
+        p = self._profiler
+
+        if p:
+            p.begin_frame()
+
         # Clear screen
         self.renderer.clear(self.background_color)
 
+        if p:
+            p.mark("clear")
+
         # Get fields snapshot for thread-safe iteration
         fields_snapshot = self.scene.get_fields_snapshot()
+
+        if p:
+            p.mark("fields_snap")
 
         # Render field backgrounds (ADR-10) - before everything else
         self.background_renderer.render_field_backgrounds(
@@ -485,6 +516,9 @@ class ProjectorDisplayServer:
             fields_snapshot,
             self.world_to_screen
         )
+
+        if p:
+            p.mark("backgrounds")
 
         # Draw debug layers if enabled
         if self.scene.grid_layer_enabled and self._world_bounds:
@@ -497,9 +531,15 @@ class ProjectorDisplayServer:
         if self.scene.field_layer_enabled:
             self.field_layer.draw(self.renderer, fields_snapshot, self.world_to_screen)
 
+        if p:
+            p.mark("debug_layers")
+
         # F1: Get snapshot for safe iteration (lock held briefly for copy only)
         rigidbodies_snapshot = self.scene.get_rigidbodies_snapshot()
         drawings_snapshot = self.scene.get_drawings_snapshot()
+
+        if p:
+            p.mark("scene_snap")
 
         # ADR-12: Position-aware size conversion
         fc = self.scene.field_calibrator
@@ -520,8 +560,15 @@ class ProjectorDisplayServer:
             else:
                 self._render_drawing(item)
 
+        if p:
+            p.mark("render")
+
         # Update display
         self.renderer.flip()
+
+        if p:
+            p.mark("flip")
+            p.end_frame()
 
     def _render_rigidbody(self, rb, fc):
         """Render a single rigid body with trajectory, shape, orientation, and label.
@@ -786,6 +833,14 @@ def main():
         "--host",
         help=f"Socket host (default: {DEFAULT_SOCKET_HOST})"
     )
+    parser.add_argument(
+        "--profile",
+        nargs="?",
+        const=5.0,
+        type=float,
+        metavar="INTERVAL",
+        help="Enable performance profiling (optional: report interval in seconds, default 5)"
+    )
 
     args = parser.parse_args()
 
@@ -805,6 +860,8 @@ def main():
         server.socket_port = args.port
     if args.host:
         server.socket_host = args.host
+    if args.profile is not None:
+        server.enable_profiling(interval=args.profile)
 
     # Load configuration
     if not server.load_config():
