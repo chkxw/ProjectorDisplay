@@ -26,7 +26,8 @@ ERR_INVALID_ALPHA = "Alpha must be 0-255, got {}"
 
 @register_command
 def create_field(scene, name: str, world_points: List[List[float]],
-                 local_points: List[List[float]]) -> dict:
+                 local_points: List[List[float]],
+                 color=None) -> dict:
     """
     Create a new coordinate field.
 
@@ -37,6 +38,7 @@ def create_field(scene, name: str, world_points: List[List[float]],
                      Order: [BL, BR, TR, TL] (counter-clockwise from bottom-left)
         local_points: 4x2 list of points in local coordinates
                      Order: [BL, BR, TR, TL] (counter-clockwise from bottom-left)
+        color: Optional background color (hex, RGB, or RGBA)
 
     Returns:
         Response with status
@@ -45,6 +47,17 @@ def create_field(scene, name: str, world_points: List[List[float]],
         ValueError: If points are not in counter-clockwise order
     """
     scene.create_field(name, world_points, local_points)
+
+    if color is not None:
+        try:
+            rgba = parse_color(color)
+        except ValueError as e:
+            return {"status": "error", "message": f"Invalid color: {e}"}
+
+        field_obj = scene.get_field(name)
+        field_obj.background_color = rgba[:3]
+        field_obj.background_alpha = rgba[3]
+
     return {"status": "success", "name": name}
 
 

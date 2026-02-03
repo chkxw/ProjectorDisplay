@@ -280,7 +280,8 @@ class DisplayClient:
     # --- Field Commands ---
 
     def create_field(self, name: str, world_points: List[List[float]],
-                     local_points: List[List[float]]) -> Optional[Dict]:
+                     local_points: List[List[float]],
+                     color=None) -> Optional[Dict]:
         """
         Create a new coordinate field.
 
@@ -288,16 +289,20 @@ class DisplayClient:
             name: Unique identifier
             world_points: 4x2 array of world coordinates [BL, BR, TR, TL]
             local_points: 4x2 array of local coordinates [BL, BR, TR, TL]
+            color: Optional background color (hex, RGB, or RGBA)
 
         Returns:
             Response dictionary
         """
-        return self._send_command({
+        cmd = {
             "action": "create_field",
             "name": name,
             "world_points": world_points,
             "local_points": local_points
-        })
+        }
+        if color is not None:
+            cmd["color"] = color
+        return self._send_command(cmd)
 
     def remove_field(self, name: str) -> Optional[Dict]:
         """Remove a coordinate field."""
@@ -461,6 +466,23 @@ class DisplayClient:
             "field": field,
             "image": image,
             "alpha": alpha
+        })
+
+    def set_field_background_color(self, field: str, color) -> Optional[Dict]:
+        """
+        Set a solid color background for a field.
+
+        Args:
+            field: Field name
+            color: Color (hex string, RGB list, or RGBA list)
+
+        Returns:
+            Response dictionary
+        """
+        return self._send_command({
+            "action": "set_field_background_color",
+            "field": field,
+            "color": color
         })
 
     def remove_field_background(self, field: str) -> Optional[Dict]:
