@@ -7,7 +7,7 @@ Isolates rendering behind Renderer interface for future flexibility
 
 import os
 import logging
-from typing import Protocol, Tuple, List, Optional
+from typing import Any, Protocol, Tuple, List, Optional
 import pygame
 
 logger = logging.getLogger(__name__)
@@ -157,6 +157,24 @@ class Renderer(Protocol):
         """Draw many lines in a single blit. Each line is (start, end, color_rgba, width)."""
         ...
 
+    def draw_polygon_alpha(self, points: List[Tuple[int, int]],
+                           color: Tuple[int, int, int], alpha: int,
+                           border: int = 0) -> None:
+        """Draw a polygon with transparency."""
+        ...
+
+    def draw_line_alpha(self, start: Tuple[int, int], end: Tuple[int, int],
+                        color: Tuple[int, int, int], alpha: int,
+                        width: int = 1) -> None:
+        """Draw a line with transparency."""
+        ...
+
+    def draw_circle_alpha(self, center: Tuple[int, int], radius: int,
+                          color: Tuple[int, int, int], alpha: int,
+                          border: int = 0) -> None:
+        """Draw a circle with transparency."""
+        ...
+
     def draw_text(self, text: str, position: Tuple[int, int],
                   color: Tuple[int, int, int], font_size: int = 24,
                   background: Optional[Tuple[int, int, int]] = None,
@@ -164,8 +182,25 @@ class Renderer(Protocol):
         """Draw text at position. angle in degrees, counter-clockwise."""
         ...
 
+    def create_image(self, rgba_bytes: bytes, width: int, height: int) -> Any:
+        """Create a renderer-specific image handle from RGBA pixel data."""
+        ...
+
+    def draw_image(self, handle: Any, position: Tuple[int, int],
+                   size: Tuple[int, int]) -> None:
+        """Draw a previously created image at position with given size."""
+        ...
+
     def flip(self) -> None:
         """Update display."""
+        ...
+
+    def tick(self, fps: int) -> float:
+        """Tick clock and return time since last tick in seconds."""
+        ...
+
+    def get_events(self) -> List:
+        """Get input events."""
         ...
 
     def quit(self) -> None:
@@ -407,19 +442,29 @@ class PygameRenderer:
 
         self.screen.blit(temp_surface, (center[0] - radius - 2, center[1] - radius - 2))
 
+    def create_image(self, rgba_bytes: bytes, width: int, height: int) -> pygame.Surface:
+        """Create a pygame Surface from RGBA pixel data."""
+        return pygame.image.frombuffer(rgba_bytes, (width, height), 'RGBA')
+
+    def draw_image(self, handle: pygame.Surface, position: Tuple[int, int],
+                   size: Tuple[int, int] = None) -> None:
+        """Draw a previously created image (pygame Surface) at position."""
+        if self.screen:
+            self.screen.blit(handle, position)
+
     def blit_surface(self, surface: pygame.Surface,
                      position: Tuple[int, int]) -> None:
         """
         Blit a pre-rendered surface to the screen.
 
         Used for background images and other pre-computed graphics.
+        Delegates to draw_image for backwards compatibility.
 
         Args:
             surface: Pygame surface to blit
             position: (x, y) position to blit at
         """
-        if self.screen:
-            self.screen.blit(surface, position)
+        self.draw_image(surface, position)
 
     def flip(self) -> None:
         """Update display."""

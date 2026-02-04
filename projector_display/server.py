@@ -30,7 +30,7 @@ import pygame  # F18: Move import to top
 
 from projector_display.core.scene import Scene
 from projector_display.core.field_calibrator import FieldCalibrator
-from projector_display.rendering.renderer import PygameRenderer
+from projector_display.rendering.renderer import Renderer, PygameRenderer
 from projector_display.rendering.primitives import draw_rigidbody
 from projector_display.rendering.trajectory import draw_trajectory
 from projector_display.core.draw_primitive import DrawPrimitiveType
@@ -94,7 +94,7 @@ class ProjectorDisplayServer:
 
         # Core components
         self.scene = Scene()
-        self.renderer: Optional[PygameRenderer] = None
+        self.renderer: Optional[Renderer] = None
         self._running = threading.Event()  # F11: Use Event for thread-safe shutdown
         self._running.set()  # Start in running state
 
@@ -104,6 +104,8 @@ class ProjectorDisplayServer:
         self.update_rate = DEFAULT_UPDATE_RATE
         self.background_color = DEFAULT_BACKGROUND_COLOR
         self.screen_index = 0
+        self.renderer_backend = "gles"  # "gles" or "pygame"
+        self.fullscreen = False
 
         # Networking
         self.server_socket: Optional[socket.socket] = None
@@ -207,6 +209,8 @@ class ProjectorDisplayServer:
 
             bg = display_config.get('background_color', list(DEFAULT_BACKGROUND_COLOR))
             self.background_color = tuple(bg) if isinstance(bg, list) else bg
+            self.renderer_backend = display_config.get('renderer', self.renderer_backend)
+            self.fullscreen = display_config.get('fullscreen', self.fullscreen)
 
             self.logger.info(f"Config loaded: socket={self.socket_host}:{self.socket_port}, "
                              f"update_rate={self.update_rate}Hz")
@@ -343,11 +347,20 @@ class ProjectorDisplayServer:
         """
         Initialize the renderer.
 
+        Selects renderer backend based on self.renderer_backend ('gles' or 'pygame').
+
         Returns:
             True if successful
         """
         try:
-            self.renderer = PygameRenderer()
+            if self.renderer_backend == "gles":
+                from projector_display.rendering.gles_renderer import GLESRenderer
+                self.logger.info("Using GLES2 renderer")
+                self.renderer = GLESRenderer(fullscreen=self.fullscreen)
+            else:
+                self.logger.info("Using pygame software renderer")
+                self.renderer = PygameRenderer()
+
             self.renderer.init(screen_index=self.screen_index)
 
             self._screen_width, self._screen_height = self.renderer.get_size()
@@ -554,14 +567,43 @@ class ProjectorDisplayServer:
 
         renderables.sort(key=lambda x: (x[0], x[1]))
 
-        for _, _, item_type, item in renderables:
-            if item_type == 'rb':
-                self._render_rigidbody(item, fc)
-            else:
-                self._render_drawing(item)
-
         if p:
+            # Profiled render loop — track per-body timing
+            _t_render_start = time.perf_counter()
+            _n_bodies = 0
+            _n_draws = 0
+            _max_body_t = 0.0
+            _sum_body_t = 0.0
+            for _, _, item_type, item in renderables:
+                _t_item = time.perf_counter()
+                if item_type == 'rb':
+                    self._render_rigidbody(item, fc)
+                    _n_bodies += 1
+                else:
+                    self._render_drawing(item)
+                    _n_draws += 1
+                _dt = time.perf_counter() - _t_item
+                if item_type == 'rb':
+                    _max_body_t = max(_max_body_t, _dt)
+                    _sum_body_t += _dt
+            _t_render_total = time.perf_counter() - _t_render_start
             p.mark("render")
+
+            # Log render sub-breakdown every 60 frames
+            if p._frame_count % 60 == 0 and (_n_bodies + _n_draws) > 0:
+                _avg_body = (_sum_body_t / _n_bodies * 1000) if _n_bodies else 0
+                self.logger.info(
+                    f"RENDER: {_n_bodies}rb + {_n_draws}draw in "
+                    f"{_t_render_total*1000:.1f}ms "
+                    f"(avg/body={_avg_body:.1f}ms, "
+                    f"max/body={_max_body_t*1000:.1f}ms)"
+                )
+        else:
+            for _, _, item_type, item in renderables:
+                if item_type == 'rb':
+                    self._render_rigidbody(item, fc)
+                else:
+                    self._render_drawing(item)
 
         # Update display
         self.renderer.flip()
@@ -840,6 +882,18 @@ def main():
         help=f"Socket host (default: {DEFAULT_SOCKET_HOST})"
     )
     parser.add_argument(
+        "--renderer", "-r",
+        choices=["pygame", "gles"],
+        default=None,
+        help="Renderer backend (default: gles)"
+    )
+    parser.add_argument(
+        "--fullscreen",
+        action="store_true",
+        default=False,
+        help="Use true fullscreen instead of borderless window (higher perf, but window disappears on focus loss)"
+    )
+    parser.add_argument(
         "--profile",
         nargs="?",
         const=5.0,
@@ -866,6 +920,10 @@ def main():
         server.socket_port = args.port
     if args.host:
         server.socket_host = args.host
+    if args.renderer:
+        server.renderer_backend = args.renderer
+    if args.fullscreen:
+        server.fullscreen = True
     if args.profile is not None:
         server.enable_profiling(interval=args.profile)
 

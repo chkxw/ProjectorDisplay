@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple, Optional, Union, Any
 from dataclasses import dataclass, field
 from collections import deque
 from enum import Enum
+import copy
 import time
 
 from projector_display.utils.color import normalize_color, parse_color
@@ -310,6 +311,18 @@ class RigidBody:
     def clear_history(self):
         """Clear position history."""
         self.position_history.clear()
+
+    def render_snapshot(self) -> "RigidBody":
+        """Lightweight copy for the render thread.
+
+        Shallow-copies the RigidBody (all scalar/reference fields shared),
+        then copies only the deque container (not the entry dicts — they're
+        never mutated after creation).
+        """
+        snap = copy.copy(self)
+        snap.position_history = deque(self.position_history,
+                                      maxlen=self.position_history.maxlen)
+        return snap
 
     def to_dict(self, include_runtime: bool = False) -> dict:
         """Convert to dictionary.

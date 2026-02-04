@@ -11,7 +11,7 @@ ADR-8: All colors use RGBA format (4-tuple). RGB (3-tuple) is auto-converted.
 
 import math
 from typing import Tuple, List, Optional, Callable, Union
-from projector_display.rendering.renderer import PygameRenderer
+from projector_display.rendering.renderer import Renderer
 from projector_display.core.rigidbody import RigidBody, RigidBodyShape
 from projector_display.core.draw_primitive import DrawPrimitive, DrawPrimitiveType
 
@@ -30,7 +30,7 @@ def _ensure_rgba(color: Union[Tuple[int, ...], List[int]]) -> ColorRGBA:
     return (color[0], color[1], color[2], color[3])
 
 
-def draw_circle(renderer: PygameRenderer,
+def draw_circle(renderer: Renderer,
                 center: Tuple[int, int],
                 radius: int,
                 color: ColorRGBA) -> None:
@@ -57,7 +57,7 @@ def draw_circle(renderer: PygameRenderer,
         renderer.draw_circle(center, radius, (0, 0, 0), 2)  # Border
 
 
-def draw_box(renderer: PygameRenderer,
+def draw_box(renderer: Renderer,
              center: Tuple[int, int],
              size: int,
              color: ColorRGBA,
@@ -111,7 +111,7 @@ def draw_box(renderer: PygameRenderer,
         renderer.draw_polygon(points, (0, 0, 0), 2)  # Border
 
 
-def draw_triangle(renderer: PygameRenderer,
+def draw_triangle(renderer: Renderer,
                   center: Tuple[int, int],
                   size: int,
                   color: ColorRGBA,
@@ -163,7 +163,7 @@ def draw_triangle(renderer: PygameRenderer,
         renderer.draw_polygon(points, (0, 0, 0), 2)  # Border
 
 
-def draw_polygon(renderer: PygameRenderer,
+def draw_polygon(renderer: Renderer,
                  center: Tuple[int, int],
                  vertices: List[Tuple[float, float]],
                  scale: float,
@@ -213,7 +213,7 @@ def draw_polygon(renderer: PygameRenderer,
         renderer.draw_polygon(points, (0, 0, 0), 2)  # Border
 
 
-def draw_orientation_arrow(renderer: PygameRenderer,
+def draw_orientation_arrow(renderer: Renderer,
                            start: Tuple[int, int],
                            end: Tuple[int, int],
                            color: ColorRGBA,
@@ -254,7 +254,7 @@ def draw_orientation_arrow(renderer: PygameRenderer,
     renderer.draw_polygon(arrowhead_points, rgb)
 
 
-def draw_label(renderer: PygameRenderer,
+def draw_label(renderer: Renderer,
                text: str,
                position: Tuple[int, int],
                offset: Tuple[int, int] = (0, 0)) -> None:
@@ -271,7 +271,7 @@ def draw_label(renderer: PygameRenderer,
     renderer.draw_text(text, label_pos, (255, 255, 255), 24, (0, 0, 0))
 
 
-def draw_rigidbody(renderer: PygameRenderer,
+def draw_rigidbody(renderer: Renderer,
                    rigidbody: RigidBody,
                    screen_pos: Tuple[int, int],
                    screen_size: int,
@@ -344,7 +344,7 @@ def _circle_to_polygon(center: Tuple[int, int], radius: int,
     return points
 
 
-def _draw_tracking_lost_outline(renderer: PygameRenderer,
+def _draw_tracking_lost_outline(renderer: Renderer,
                                  shape: RigidBodyShape,
                                  center: Tuple[int, int],
                                  size: int,
@@ -422,7 +422,7 @@ def _draw_tracking_lost_outline(renderer: PygameRenderer,
         renderer.draw_circle(center, size, TRACKING_LOST_COLOR, TRACKING_LOST_THICKNESS)
 
 
-def draw_compound(renderer: PygameRenderer,
+def draw_compound(renderer: Renderer,
                   center: Tuple[int, int],
                   scale: int,
                   primitives: List[DrawPrimitive],
@@ -462,7 +462,7 @@ def _transform_local_point(lx: float, ly: float,
     return (sx, sy)
 
 
-def _draw_single_primitive(renderer: PygameRenderer,
+def _draw_single_primitive(renderer: Renderer,
                            prim: DrawPrimitive,
                            center: Tuple[int, int],
                            scale: int,

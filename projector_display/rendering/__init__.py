@@ -1,6 +1,7 @@
 """Rendering components for projector display."""
 
 from projector_display.rendering.renderer import Renderer, PygameRenderer
+from projector_display.rendering.gles_renderer import GLESRenderer
 from projector_display.rendering.primitives import draw_circle, draw_box, draw_triangle, draw_polygon
 from projector_display.rendering.trajectory import draw_trajectory
 from projector_display.rendering.debug_layers import GridLayer, FieldLayer
@@ -9,6 +10,7 @@ from projector_display.rendering.background import BackgroundRenderer
 __all__ = [
     "Renderer",
     "PygameRenderer",
+    "GLESRenderer",
     "draw_circle",
     "draw_box",
     "draw_triangle",

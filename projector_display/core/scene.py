@@ -6,7 +6,6 @@ Single scene per server instance - to "switch" experiments, client sends
 commands to clear and rebuild the scene.
 """
 
-import copy
 import threading
 from typing import Dict, Optional, List
 from projector_display.core.field_calibrator import FieldCalibrator, Field
@@ -50,15 +49,15 @@ class Scene:
         return self._rigidbodies
 
     def get_rigidbodies_snapshot(self) -> Dict[str, RigidBody]:
-        """Get a deep copy snapshot of rigidbodies for safe iteration.
+        """Get a lightweight snapshot of rigidbodies for safe iteration.
 
-        Deep copy ensures render loop can safely iterate position_history
-        while MoCap thread updates the original. If this becomes a bottleneck,
-        switch to selective copy (only copy mutable nested structures like
-        position_history, not the entire RigidBody).
+        Uses RigidBody.render_snapshot() which shallow-copies each RigidBody
+        and only copies the position_history deque container (not the entry
+        dicts, which are never mutated after creation).
         """
         with self._lock:
-            return copy.deepcopy(self._rigidbodies)
+            return {name: rb.render_snapshot()
+                    for name, rb in self._rigidbodies.items()}
 
     def get_fields_snapshot(self) -> Dict[str, 'Field']:
         """Get a snapshot copy of fields for safe iteration."""
@@ -66,9 +65,12 @@ class Scene:
             return dict(self.field_calibrator.fields)
 
     def get_drawings_snapshot(self) -> Dict[str, Drawing]:
-        """Get a deep copy snapshot of drawings for safe render iteration."""
+        """Get a snapshot of drawings for safe render iteration.
+
+        Shallow copy of the dict — Drawing objects are immutable after creation.
+        """
         with self._lock:
-            return copy.deepcopy(self._drawings)
+            return dict(self._drawings)
 
     def _next_z_seq(self) -> int:
         """Return next monotonic sequence number for z-order tie-breaking.

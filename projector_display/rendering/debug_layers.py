@@ -8,7 +8,7 @@ Two togglable overlay layers for on-demand debugging:
 
 import math
 from typing import Callable, Dict, Tuple, List
-from projector_display.rendering.renderer import PygameRenderer
+from projector_display.rendering.renderer import Renderer
 from projector_display.core.field_calibrator import Field
 
 
@@ -44,7 +44,7 @@ class GridLayer:
         self.minor_color = minor_color
         self.show_minor = show_minor
 
-    def draw(self, renderer: PygameRenderer,
+    def draw(self, renderer: Renderer,
              world_to_screen: Callable[[float, float], Tuple[int, int]],
              world_bounds: Tuple[float, float, float, float]) -> None:
         """
@@ -129,7 +129,7 @@ class GridLayer:
             p2 = world_to_screen(grid_max_x, y)
             lines.append((p1, p2, color, 2))
 
-    def _draw_labels(self, renderer: PygameRenderer,
+    def _draw_labels(self, renderer: Renderer,
                      world_to_screen: Callable,
                      grid_min_x: int, grid_max_x: int,
                      grid_min_y: int, grid_max_y: int) -> None:
@@ -146,7 +146,7 @@ class GridLayer:
                     renderer.draw_text(label, (pos[0] + 25, pos[1] - 10),
                                         self.major_color[:3], 18)
 
-    def _draw_origin_marker(self, renderer: PygameRenderer,
+    def _draw_origin_marker(self, renderer: Renderer,
                             world_to_screen: Callable) -> None:
         """Draw origin marker if visible."""
         screen_w, screen_h = renderer.get_size()
@@ -189,7 +189,7 @@ class FieldLayer:
         self.label_color = label_color
         self.corner_color = corner_color
 
-    def draw(self, renderer: PygameRenderer,
+    def draw(self, renderer: Renderer,
              fields: Dict[str, Field],
              world_to_screen: Callable[[float, float], Tuple[int, int]]) -> None:
         """
@@ -203,7 +203,7 @@ class FieldLayer:
         for name, field in fields.items():
             self._draw_field(renderer, name, field, world_to_screen)
 
-    def _draw_field(self, renderer: PygameRenderer,
+    def _draw_field(self, renderer: Renderer,
                     name: str,
                     field: Field,
                     world_to_screen: Callable) -> None:

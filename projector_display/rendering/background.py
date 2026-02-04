@@ -3,15 +3,17 @@ Background rendering for projector display.
 
 Implements ADR-10: Field background rendering with perspective warp.
 Uses OpenCV warpPerspective to transform images to match field quadrilaterals.
+
+Renderer-agnostic: uses renderer.create_image / renderer.draw_image instead
+of pygame.Surface directly.
 """
 
 import logging
 from pathlib import Path
-from typing import Dict, Tuple, Optional, Callable
+from typing import Any, Dict, Tuple, Optional, Callable
 
 import cv2
 import numpy as np
-import pygame
 
 from projector_display.core.field_calibrator import Field
 from projector_display.storage import get_storage_manager
@@ -28,8 +30,11 @@ class BackgroundRenderer:
     """
 
     def __init__(self):
-        # Cache: field_name -> (warped_surface, cache_key)
-        self._cache: Dict[str, Tuple[pygame.Surface, str]] = {}
+        # Cache: field_name -> (image_handle, cache_key, offset, size)
+        self._cache: Dict[str, Tuple[Any, str, Tuple[int, int], Tuple[int, int]]] = {}
+        # Track which renderer created the cached handles so we can
+        # invalidate when the renderer changes.
+        self._cache_renderer_id: Optional[int] = None
 
     def _get_cache_key(self, field: Field, image_path: Path,
                        screen_points: np.ndarray) -> str:
@@ -40,7 +45,8 @@ class BackgroundRenderer:
         )
 
     def _load_and_warp_image(self, field: Field, image_path: Path,
-                             screen_points: np.ndarray) -> Optional[pygame.Surface]:
+                             screen_points: np.ndarray
+                             ) -> Optional[Tuple[bytes, int, int, Tuple[int, int]]]:
         """
         Load image and warp it to fit the field's screen quadrilateral.
 
@@ -50,7 +56,7 @@ class BackgroundRenderer:
             screen_points: 4x2 array of screen coordinates [BL, BR, TR, TL]
 
         Returns:
-            Warped pygame.Surface with alpha channel, or None on failure
+            (rgba_bytes, width, height, offset) or None on failure
         """
         try:
             # Load image with OpenCV (supports PNG with alpha)
@@ -110,16 +116,10 @@ class BackgroundRenderer:
                 alpha_scale = field.background_alpha / 255.0
                 warped[:, :, 3] = (warped[:, :, 3] * alpha_scale).astype(np.uint8)
 
-            # Convert to pygame surface
-            # pygame expects (width, height) but numpy is (height, width)
-            surface = pygame.image.frombuffer(
-                warped.tobytes(), (output_w, output_h), 'RGBA'
-            )
+            rgba_bytes = warped.tobytes()
+            offset = (int(x_min), int(y_min))
 
-            # Store the offset for blitting
-            surface.offset = (x_min, y_min)
-
-            return surface
+            return (rgba_bytes, output_w, output_h, offset)
 
         except Exception as e:
             logger.error(f"Failed to warp background image: {e}")
@@ -131,12 +131,18 @@ class BackgroundRenderer:
         Render background images or solid colors for all fields that have them.
 
         Args:
-            renderer: PygameRenderer instance
+            renderer: Renderer instance (PygameRenderer or GLESRenderer)
             fields: Dictionary of field_name -> Field
             world_to_screen: Function to convert world coords to screen coords
         """
+        # Invalidate cache if renderer changed (e.g. switched backends)
+        renderer_id = id(renderer)
+        if self._cache_renderer_id is not None and self._cache_renderer_id != renderer_id:
+            self._cache.clear()
+        self._cache_renderer_id = renderer_id
+
         storage = get_storage_manager()
-        images_dir = storage.get_session_images_dir()
+        images_dir = None  # lazy init
 
         for field_name, field in fields.items():
             # Handle solid color background
@@ -157,6 +163,10 @@ class BackgroundRenderer:
             if not field.background_image:
                 continue
 
+            # Lazy-init images directory only when needed
+            if images_dir is None:
+                images_dir = storage.get_session_images_dir()
+
             image_path = images_dir / field.background_image
             if not image_path.exists():
                 logger.warning(f"Background image not found: {image_path}")
@@ -173,19 +183,20 @@ class BackgroundRenderer:
             cached = self._cache.get(field_name)
 
             if cached and cached[1] == cache_key:
-                # Use cached surface
-                surface = cached[0]
+                # Use cached handle
+                image_handle, _, offset, size = cached
             else:
                 # Warp and cache
-                surface = self._load_and_warp_image(field, image_path, screen_points)
-                if surface is not None:
-                    self._cache[field_name] = (surface, cache_key)
-                else:
+                result = self._load_and_warp_image(field, image_path, screen_points)
+                if result is None:
                     continue
+                rgba_bytes, output_w, output_h, offset = result
+                size = (output_w, output_h)
+                image_handle = renderer.create_image(rgba_bytes, output_w, output_h)
+                self._cache[field_name] = (image_handle, cache_key, offset, size)
 
-            # Blit to screen at the offset position
-            offset = getattr(surface, 'offset', (0, 0))
-            renderer.blit_surface(surface, offset)
+            # Draw the image at offset position
+            renderer.draw_image(image_handle, offset, size)
 
     def invalidate_cache(self, field_name: Optional[str] = None):
         """

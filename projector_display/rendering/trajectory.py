@@ -9,7 +9,7 @@ ADR-8: All colors use RGBA format. Gradients support alpha fade (e.g., opaque to
 
 import math
 from typing import List, Tuple, Union, Callable
-from projector_display.rendering.renderer import PygameRenderer
+from projector_display.rendering.renderer import Renderer
 from projector_display.core.rigidbody import TrajectoryStyle
 
 # Type alias for RGBA color
@@ -23,7 +23,7 @@ def _ensure_rgba(color: Union[Tuple[int, ...], List[int]]) -> ColorRGBA:
     return (color[0], color[1], color[2], color[3])
 
 
-def draw_trajectory(renderer: PygameRenderer,
+def draw_trajectory(renderer: Renderer,
                     screen_points: List[Tuple[int, int]],
                     style: TrajectoryStyle,
                     distance_to_pixels: Callable[[float], int]) -> None:
@@ -48,7 +48,7 @@ def draw_trajectory(renderer: PygameRenderer,
         _draw_dashed_trajectory(renderer, screen_points, style, distance_to_pixels)
 
 
-def _draw_solid_trajectory(renderer: PygameRenderer,
+def _draw_solid_trajectory(renderer: Renderer,
                            screen_points: List[Tuple[int, int]],
                            style: TrajectoryStyle) -> None:
     """Draw solid line trajectory with RGBA gradient support."""
@@ -80,7 +80,7 @@ def _draw_solid_trajectory(renderer: PygameRenderer,
             renderer.draw_lines(screen_points, color[:3], style.thickness)
 
 
-def _draw_dotted_trajectory(renderer: PygameRenderer,
+def _draw_dotted_trajectory(renderer: Renderer,
                             screen_points: List[Tuple[int, int]],
                             style: TrajectoryStyle,
                             distance_to_pixels: Callable[[float], int]) -> None:
@@ -121,7 +121,7 @@ def _draw_dotted_trajectory(renderer: PygameRenderer,
             accumulated_dist = current_dist - segment_dist
 
 
-def _draw_dashed_trajectory(renderer: PygameRenderer,
+def _draw_dashed_trajectory(renderer: Renderer,
                             screen_points: List[Tuple[int, int]],
                             style: TrajectoryStyle,
                             distance_to_pixels: Callable[[float], int]) -> None:
