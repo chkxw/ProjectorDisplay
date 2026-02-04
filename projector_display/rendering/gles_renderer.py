@@ -639,60 +639,24 @@ class GLESRenderer:
         _gl_Clear(GL_COLOR_BUFFER_BIT)
 
     def draw_circle(self, center: Tuple[int, int], radius: int,
-                    color: Tuple[int, int, int], border: int = 0) -> None:
+                    color: Tuple[int, int, int], alpha: int = 255,
+                    border: int = 0) -> None:
+        if alpha == 0:
+            return
         segs = self._adaptive_segments(radius)
         if border == 0:
             verts = self._circle_vertices(center[0], center[1], radius, segs)
-            self._draw_solid(verts, GL_TRIANGLE_FAN, color)
+            self._draw_solid(verts, GL_TRIANGLE_FAN, color, alpha)
         else:
             verts = self._circle_outline_vertices(center[0], center[1], radius, segs)
             if border != self._current_line_width:
                 _gl_LineWidth(float(border))
                 self._current_line_width = border
-            self._draw_solid(verts, GL_LINE_LOOP, color)
+            self._draw_solid(verts, GL_LINE_LOOP, color, alpha)
 
     def draw_polygon(self, points: List[Tuple[int, int]],
-                     color: Tuple[int, int, int], border: int = 0) -> None:
-        if len(points) < 3:
-            return
-        verts = np.array(points, dtype=np.float32)
-        if border == 0:
-            self._draw_solid(verts, GL_TRIANGLE_FAN, color)
-        else:
-            if border != self._current_line_width:
-                _gl_LineWidth(float(border))
-                self._current_line_width = border
-            self._draw_solid(verts, GL_LINE_LOOP, color)
-
-    def draw_line(self, start: Tuple[int, int], end: Tuple[int, int],
-                  color: Tuple[int, int, int], width: int = 1) -> None:
-        verts = np.array([start, end], dtype=np.float32)
-        if width != self._current_line_width:
-            _gl_LineWidth(float(width))
-            self._current_line_width = width
-        self._draw_solid(verts, GL_LINES, color)
-
-    def draw_lines(self, points: List[Tuple[int, int]],
-                   color: Tuple[int, int, int], width: int = 1,
-                   closed: bool = False) -> None:
-        if len(points) < 2:
-            return
-        verts = np.array(points, dtype=np.float32)
-        if width != self._current_line_width:
-            _gl_LineWidth(float(width))
-            self._current_line_width = width
-        mode = GL_LINE_LOOP if closed else GL_LINE_STRIP
-        self._draw_solid(verts, mode, color)
-
-    def draw_rect(self, rect: Tuple[int, int, int, int],
-                  color: Tuple[int, int, int], border: int = 0) -> None:
-        x, y, w, h = rect
-        points = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
-        self.draw_polygon(points, color, border)
-
-    def draw_polygon_alpha(self, points: List[Tuple[int, int]],
-                           color: Tuple[int, int, int], alpha: int,
-                           border: int = 0) -> None:
+                     color: Tuple[int, int, int], alpha: int = 255,
+                     border: int = 0) -> None:
         if len(points) < 3 or alpha == 0:
             return
         verts = np.array(points, dtype=np.float32)
@@ -704,9 +668,9 @@ class GLESRenderer:
                 self._current_line_width = border
             self._draw_solid(verts, GL_LINE_LOOP, color, alpha)
 
-    def draw_line_alpha(self, start: Tuple[int, int], end: Tuple[int, int],
-                        color: Tuple[int, int, int], alpha: int,
-                        width: int = 1) -> None:
+    def draw_line(self, start: Tuple[int, int], end: Tuple[int, int],
+                  color: Tuple[int, int, int], alpha: int = 255,
+                  width: int = 1) -> None:
         if alpha == 0:
             return
         verts = np.array([start, end], dtype=np.float32)
@@ -715,21 +679,70 @@ class GLESRenderer:
             self._current_line_width = width
         self._draw_solid(verts, GL_LINES, color, alpha)
 
-    def draw_circle_alpha(self, center: Tuple[int, int], radius: int,
-                          color: Tuple[int, int, int], alpha: int,
-                          border: int = 0) -> None:
-        if alpha == 0:
+    def draw_lines(self, points: List[Tuple[int, int]],
+                   color: Tuple[int, int, int], alpha: int = 255,
+                   width: int = 1, closed: bool = False) -> None:
+        if len(points) < 2 or alpha == 0:
             return
-        segs = self._adaptive_segments(radius)
+        verts = np.array(points, dtype=np.float32)
+        if width != self._current_line_width:
+            _gl_LineWidth(float(width))
+            self._current_line_width = width
+        mode = GL_LINE_LOOP if closed else GL_LINE_STRIP
+        self._draw_solid(verts, mode, color, alpha)
+
+    def draw_circles_batch(self, circles: List[Tuple[Tuple[int, int], int]],
+                           color: Tuple[int, int, int], alpha: int = 255,
+                           border: int = 0) -> None:
+        if not circles or alpha == 0:
+            return
+
         if border == 0:
-            verts = self._circle_vertices(center[0], center[1], radius, segs)
-            self._draw_solid(verts, GL_TRIANGLE_FAN, color, alpha)
+            # Filled circles: convert each circle's triangle fan to explicit
+            # GL_TRIANGLES (center, v_i, v_{i+1}), concatenate into single VBO
+            all_tris = []
+            for center, radius in circles:
+                segs = self._adaptive_segments(radius)
+                fan = self._circle_vertices(center[0], center[1], radius, segs)
+                # fan[0] is center, fan[1:] are ring vertices
+                # Convert fan to explicit triangles
+                cx, cy = fan[0]
+                for i in range(1, len(fan) - 1):
+                    all_tris.append(fan[0])
+                    all_tris.append(fan[i])
+                    all_tris.append(fan[i + 1])
+
+            if all_tris:
+                verts = np.array(all_tris, dtype=np.float32)
+                self._draw_solid(verts, GL_TRIANGLES, color, alpha)
         else:
-            verts = self._circle_outline_vertices(center[0], center[1], radius, segs)
+            # Outline circles: draw each individually (GL_LINE_LOOP can't be batched)
             if border != self._current_line_width:
                 _gl_LineWidth(float(border))
                 self._current_line_width = border
-            self._draw_solid(verts, GL_LINE_LOOP, color, alpha)
+            for center, radius in circles:
+                segs = self._adaptive_segments(radius)
+                verts = self._circle_outline_vertices(center[0], center[1], radius, segs)
+                self._draw_solid(verts, GL_LINE_LOOP, color, alpha)
+
+    def draw_lines_batch(self,
+                         lines: List[Tuple[Tuple[int, int], Tuple[int, int]]],
+                         color: Tuple[int, int, int], alpha: int = 255,
+                         width: int = 1) -> None:
+        if not lines or alpha == 0:
+            return
+
+        if width != self._current_line_width:
+            _gl_LineWidth(float(width))
+            self._current_line_width = width
+
+        # Flatten to [start1, end1, start2, end2, ...] for GL_LINES
+        verts = np.empty((len(lines) * 2, 2), dtype=np.float32)
+        for i, (start, end) in enumerate(lines):
+            verts[i * 2] = start
+            verts[i * 2 + 1] = end
+
+        self._draw_solid(verts, GL_LINES, color, alpha)
 
     def draw_line_batch(self, lines: List[Tuple[Tuple[int, int], Tuple[int, int],
                                                 Tuple[int, ...], int]]) -> None:

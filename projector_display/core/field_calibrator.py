@@ -347,12 +347,15 @@ class FieldCalibrator:
         wx, wy = float(world_pos[0]), float(world_pos[1])
         d = float(distance)
 
-        # Convert center and four probe points through perspective transform
-        p_center = self.convert([wx, wy], "base", "screen")
-        p_right = self.convert([wx + d, wy], "base", "screen")
-        p_left = self.convert([wx - d, wy], "base", "screen")
-        p_up = self.convert([wx, wy + d], "base", "screen")
-        p_down = self.convert([wx, wy - d], "base", "screen")
+        # Batch all 5 probes in a single convert() call
+        batch = [[wx, wy], [wx + d, wy], [wx - d, wy], [wx, wy + d], [wx, wy - d]]
+        screen_pts = self.convert(batch, "base", "screen")
+
+        p_center = screen_pts[0]
+        p_right = screen_pts[1]
+        p_left = screen_pts[2]
+        p_up = screen_pts[3]
+        p_down = screen_pts[4]
 
         # Compute screen distances in each direction, averaged symmetrically
         dx = (_screen_dist(p_center, p_right) + _screen_dist(p_center, p_left)) / 2

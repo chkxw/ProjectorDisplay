@@ -61,23 +61,13 @@ def _draw_solid_trajectory(renderer: Renderer,
                 style.gradient_start,
                 t
             )
-            # Use alpha-aware drawing if alpha < 255
-            if len(color) == 4 and color[3] < 255:
-                renderer.draw_line_alpha(screen_points[i], screen_points[i + 1],
-                                        color[:3], color[3], style.thickness)
-            else:
-                renderer.draw_line(screen_points[i], screen_points[i + 1],
-                                   color[:3], style.thickness)
+            alpha = color[3] if len(color) == 4 else 255
+            renderer.draw_line(screen_points[i], screen_points[i + 1],
+                               color[:3], alpha, style.thickness)
     else:
         # Single color line
         color = _ensure_rgba(style.color) if isinstance(style.color, tuple) else (100, 100, 255, 255)
-        if color[3] < 255:
-            # Draw segments with alpha
-            for i in range(len(screen_points) - 1):
-                renderer.draw_line_alpha(screen_points[i], screen_points[i + 1],
-                                        color[:3], color[3], style.thickness)
-        else:
-            renderer.draw_lines(screen_points, color[:3], style.thickness)
+        renderer.draw_lines(screen_points, color[:3], color[3], style.thickness)
 
 
 def _draw_dotted_trajectory(renderer: Renderer,
@@ -111,11 +101,8 @@ def _draw_dotted_trajectory(renderer: Renderer,
                 else:
                     color = _ensure_rgba(style.color) if isinstance(style.color, tuple) else (100, 100, 255, 255)
 
-                # Use alpha-aware drawing if needed
-                if len(color) == 4 and color[3] < 255:
-                    renderer.draw_circle_alpha((dot_x, dot_y), max(2, style.thickness), color[:3], color[3])
-                else:
-                    renderer.draw_circle((dot_x, dot_y), max(2, style.thickness), color[:3])
+                alpha = color[3] if len(color) == 4 else 255
+                renderer.draw_circle((dot_x, dot_y), max(2, style.thickness), color[:3], alpha)
                 current_dist += dot_spacing_pixels
 
             accumulated_dist = current_dist - segment_dist
@@ -135,10 +122,8 @@ def _draw_dashed_trajectory(renderer: Renderer,
 
     def _draw_dash_line(start, end, color):
         """Helper to draw a dash with proper alpha handling."""
-        if len(color) == 4 and color[3] < 255:
-            renderer.draw_line_alpha(start, end, color[:3], color[3], style.thickness)
-        else:
-            renderer.draw_line(start, end, color[:3], style.thickness)
+        alpha = color[3] if len(color) == 4 else 255
+        renderer.draw_line(start, end, color[:3], alpha, style.thickness)
 
     for i in range(len(screen_points) - 1):
         p1 = screen_points[i]
@@ -230,7 +215,7 @@ def _interpolate_color(color1: ColorRGBA,
         Interpolated RGB color (alpha handled separately by renderer)
 
     Note: Alpha is interpolated but the return is RGB for pygame compatibility.
-          For alpha-blended drawing, use draw_line_alpha in the renderer.
+          For alpha-blended drawing, use draw_line with alpha param in the renderer.
     """
     color1 = _ensure_rgba(color1)
     color2 = _ensure_rgba(color2)

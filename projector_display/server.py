@@ -501,6 +501,23 @@ class ProjectorDisplayServer:
         # F17: Use round() instead of int() for better accuracy
         return (round(screen_pos[0]), round(screen_pos[1]))
 
+    def batch_world_to_screen(self, points) -> List[Tuple[int, int]]:
+        """Convert multiple world coordinate points to screen coordinates in a single batch.
+
+        Args:
+            points: Iterable of (x, y) world coordinate pairs
+
+        Returns:
+            List of (int, int) screen coordinate tuples
+        """
+        if "screen" not in self.scene.field_calibrator.fields:
+            center = (self._screen_width // 2, self._screen_height // 2)
+            return [center] * len(points)
+
+        pts_array = [[float(p[0]), float(p[1])] for p in points]
+        screen_pts = self.scene.field_calibrator.convert(pts_array, "base", "screen")
+        return [(round(float(sp[0])), round(float(sp[1]))) for sp in screen_pts]
+
     def render_frame(self):
         """Render a single frame."""
         if not self.renderer:
@@ -659,7 +676,7 @@ class ProjectorDisplayServer:
         if rb.trajectory_style.enabled:
             trajectory_points = rb.get_trajectory_points()
             if len(trajectory_points) >= 2:
-                screen_traj = [self.world_to_screen(p[0], p[1]) for p in trajectory_points]
+                screen_traj = self.batch_world_to_screen(trajectory_points)
                 # ADR-12: Bind scale to rigid body position
                 scale_at_pos = lambda d, pos=display_pos: fc.world_scale(pos, d)
                 draw_trajectory(self.renderer, screen_traj, rb.trajectory_style,
@@ -690,19 +707,19 @@ class ProjectorDisplayServer:
                 if alpha < 255:
                     from projector_display.rendering.primitives import _circle_to_polygon
                     pts = _circle_to_polygon(screen_pos, screen_radius, 32)
-                    self.renderer.draw_polygon_alpha(pts, rgb, alpha)
-                    self.renderer.draw_polygon_alpha(pts, (0, 0, 0), alpha, 2)
+                    self.renderer.draw_polygon(pts, rgb, alpha)
+                    self.renderer.draw_polygon(pts, (0, 0, 0), alpha, 2)
                 else:
                     self.renderer.draw_circle(screen_pos, screen_radius, rgb)
-                    self.renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0), 2)
+                    self.renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0), border=2)
             else:
                 thickness = prim.thickness if prim.thickness > 0 else 2
                 if alpha < 255:
                     from projector_display.rendering.primitives import _circle_to_polygon
                     pts = _circle_to_polygon(screen_pos, screen_radius, 32)
-                    self.renderer.draw_polygon_alpha(pts, rgb, alpha, thickness)
+                    self.renderer.draw_polygon(pts, rgb, alpha, thickness)
                 else:
-                    self.renderer.draw_circle(screen_pos, screen_radius, rgb, thickness)
+                    self.renderer.draw_circle(screen_pos, screen_radius, rgb, border=thickness)
 
         elif prim.type == DrawPrimitiveType.BOX:
             screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
@@ -735,17 +752,17 @@ class ProjectorDisplayServer:
 
             if prim.filled:
                 if alpha < 255:
-                    self.renderer.draw_polygon_alpha(points, rgb, alpha)
-                    self.renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
+                    self.renderer.draw_polygon(points, rgb, alpha)
+                    self.renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
                 else:
                     self.renderer.draw_polygon(points, rgb)
-                    self.renderer.draw_polygon(points, (0, 0, 0), 2)
+                    self.renderer.draw_polygon(points, (0, 0, 0), border=2)
             else:
                 thickness = prim.thickness if prim.thickness > 0 else 2
                 if alpha < 255:
-                    self.renderer.draw_polygon_alpha(points, rgb, alpha, thickness)
+                    self.renderer.draw_polygon(points, rgb, alpha, thickness)
                 else:
-                    self.renderer.draw_polygon(points, rgb, thickness)
+                    self.renderer.draw_polygon(points, rgb, border=thickness)
 
         elif prim.type in (DrawPrimitiveType.LINE, DrawPrimitiveType.ARROW):
             screen_start = self.world_to_screen(drawing.world_x, drawing.world_y)
@@ -753,10 +770,7 @@ class ProjectorDisplayServer:
             thickness = prim.thickness if prim.thickness > 0 else 2
 
             if prim.type == DrawPrimitiveType.LINE:
-                if alpha < 255:
-                    self.renderer.draw_line_alpha(screen_start, screen_end, rgb, alpha, thickness)
-                else:
-                    self.renderer.draw_line(screen_start, screen_end, rgb, thickness)
+                self.renderer.draw_line(screen_start, screen_end, rgb, alpha, thickness)
             else:
                 from projector_display.rendering.primitives import draw_orientation_arrow
                 draw_orientation_arrow(self.renderer, screen_start, screen_end, color, thickness)
@@ -767,17 +781,17 @@ class ProjectorDisplayServer:
                 points = [self.world_to_screen(vx, vy) for vx, vy in prim.vertices]
                 if prim.filled:
                     if alpha < 255:
-                        self.renderer.draw_polygon_alpha(points, rgb, alpha)
-                        self.renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
+                        self.renderer.draw_polygon(points, rgb, alpha)
+                        self.renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
                     else:
                         self.renderer.draw_polygon(points, rgb)
-                        self.renderer.draw_polygon(points, (0, 0, 0), 2)
+                        self.renderer.draw_polygon(points, (0, 0, 0), border=2)
                 else:
                     thickness = prim.thickness if prim.thickness > 0 else 2
                     if alpha < 255:
-                        self.renderer.draw_polygon_alpha(points, rgb, alpha, thickness)
+                        self.renderer.draw_polygon(points, rgb, alpha, thickness)
                     else:
-                        self.renderer.draw_polygon(points, rgb, thickness)
+                        self.renderer.draw_polygon(points, rgb, border=thickness)
 
         elif prim.type == DrawPrimitiveType.TEXT:
             screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)

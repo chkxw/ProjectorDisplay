@@ -50,11 +50,11 @@ def draw_circle(renderer: Renderer,
     if alpha < 255:
         # Use transparency
         points = _circle_to_polygon(center, radius, 32)
-        renderer.draw_polygon_alpha(points, rgb, alpha)
-        renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
+        renderer.draw_polygon(points, rgb, alpha)
+        renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
     else:
         renderer.draw_circle(center, radius, rgb)
-        renderer.draw_circle(center, radius, (0, 0, 0), 2)  # Border
+        renderer.draw_circle(center, radius, (0, 0, 0), border=2)
 
 
 def draw_box(renderer: Renderer,
@@ -104,11 +104,11 @@ def draw_box(renderer: Renderer,
         ]
 
     if alpha < 255:
-        renderer.draw_polygon_alpha(points, rgb, alpha)
-        renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
+        renderer.draw_polygon(points, rgb, alpha)
+        renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
     else:
         renderer.draw_polygon(points, rgb)
-        renderer.draw_polygon(points, (0, 0, 0), 2)  # Border
+        renderer.draw_polygon(points, (0, 0, 0), border=2)
 
 
 def draw_triangle(renderer: Renderer,
@@ -156,11 +156,11 @@ def draw_triangle(renderer: Renderer,
         ]
 
     if alpha < 255:
-        renderer.draw_polygon_alpha(points, rgb, alpha)
-        renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
+        renderer.draw_polygon(points, rgb, alpha)
+        renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
     else:
         renderer.draw_polygon(points, rgb)
-        renderer.draw_polygon(points, (0, 0, 0), 2)  # Border
+        renderer.draw_polygon(points, (0, 0, 0), border=2)
 
 
 def draw_polygon(renderer: Renderer,
@@ -206,11 +206,11 @@ def draw_polygon(renderer: Renderer,
             points.append((px, py))
 
     if alpha < 255:
-        renderer.draw_polygon_alpha(points, rgb, alpha)
-        renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
+        renderer.draw_polygon(points, rgb, alpha)
+        renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
     else:
         renderer.draw_polygon(points, rgb)
-        renderer.draw_polygon(points, (0, 0, 0), 2)  # Border
+        renderer.draw_polygon(points, (0, 0, 0), border=2)
 
 
 def draw_orientation_arrow(renderer: Renderer,
@@ -231,7 +231,7 @@ def draw_orientation_arrow(renderer: Renderer,
     color = _ensure_rgba(color)
     rgb = color[:3]
     # Draw main line
-    renderer.draw_line(start, end, rgb, thickness)
+    renderer.draw_line(start, end, rgb, width=thickness)
 
     # Calculate arrowhead
     dx = end[0] - start[0]
@@ -362,7 +362,7 @@ def _draw_tracking_lost_outline(renderer: Renderer,
         polygon_vertices: For POLYGON shape, list of vertices
     """
     if shape == RigidBodyShape.CIRCLE:
-        renderer.draw_circle(center, size, TRACKING_LOST_COLOR, TRACKING_LOST_THICKNESS)
+        renderer.draw_circle(center, size, TRACKING_LOST_COLOR, border=TRACKING_LOST_THICKNESS)
 
     elif shape == RigidBodyShape.BOX:
         if angle is not None:
@@ -381,7 +381,7 @@ def _draw_tracking_lost_outline(renderer: Renderer,
                 (center[0] + size, center[1] + size),
                 (center[0] - size, center[1] + size),
             ]
-        renderer.draw_polygon(points, TRACKING_LOST_COLOR, TRACKING_LOST_THICKNESS)
+        renderer.draw_polygon(points, TRACKING_LOST_COLOR, border=TRACKING_LOST_THICKNESS)
 
     elif shape == RigidBodyShape.TRIANGLE:
         if angle is not None:
@@ -399,7 +399,7 @@ def _draw_tracking_lost_outline(renderer: Renderer,
                 (center[0] - int(size * 0.866), center[1] + int(size * 0.5)),
                 (center[0] + int(size * 0.866), center[1] + int(size * 0.5))
             ]
-        renderer.draw_polygon(points, TRACKING_LOST_COLOR, TRACKING_LOST_THICKNESS)
+        renderer.draw_polygon(points, TRACKING_LOST_COLOR, border=TRACKING_LOST_THICKNESS)
 
     elif shape == RigidBodyShape.POLYGON and polygon_vertices:
         if angle is not None:
@@ -415,11 +415,17 @@ def _draw_tracking_lost_outline(renderer: Renderer,
         else:
             points = [(center[0] + int(vx * size), center[1] + int(vy * size))
                       for vx, vy in polygon_vertices]
-        renderer.draw_polygon(points, TRACKING_LOST_COLOR, TRACKING_LOST_THICKNESS)
+        renderer.draw_polygon(points, TRACKING_LOST_COLOR, border=TRACKING_LOST_THICKNESS)
 
     elif shape == RigidBodyShape.COMPOUND:
         # Bounding circle fallback for compound shapes
-        renderer.draw_circle(center, size, TRACKING_LOST_COLOR, TRACKING_LOST_THICKNESS)
+        renderer.draw_circle(center, size, TRACKING_LOST_COLOR, border=TRACKING_LOST_THICKNESS)
+
+
+def _batch_key(prim: DrawPrimitive) -> tuple:
+    """Create a grouping key for batching consecutive primitives."""
+    color = _ensure_rgba(prim.color)
+    return (prim.type, color, prim.filled, prim.thickness, prim.z_order)
 
 
 def draw_compound(renderer: Renderer,
@@ -430,11 +436,10 @@ def draw_compound(renderer: Renderer,
     """
     Draw a compound shape from a list of DrawPrimitives.
 
-    Each primitive's coordinates are in body-local space:
-      - (0, 0) = body center, +x = orientation direction
-      - Scaled by `scale` (pixels per local unit)
-      - Rotated by `angle` (body orientation in screen radians)
-      - Translated to `center` (body screen position)
+    Groups consecutive primitives with the same type/color/style for batched
+    rendering when possible (filled circles -> draw_circles_batch, lines ->
+    draw_lines_batch). Non-batchable types and single-element groups
+    fall through to _draw_single_primitive.
 
     Args:
         renderer: Renderer instance
@@ -446,8 +451,63 @@ def draw_compound(renderer: Renderer,
     cos_a = math.cos(angle) if angle is not None else 1.0
     sin_a = math.sin(angle) if angle is not None else 0.0
 
-    for prim in sorted(primitives, key=lambda p: p.z_order):
-        _draw_single_primitive(renderer, prim, center, scale, cos_a, sin_a, angle)
+    sorted_prims = sorted(primitives, key=lambda p: p.z_order)
+
+    # Group consecutive primitives with same batch key
+    i = 0
+    while i < len(sorted_prims):
+        prim = sorted_prims[i]
+        key = _batch_key(prim)
+
+        # Collect consecutive primitives with the same key
+        group = [prim]
+        j = i + 1
+        while j < len(sorted_prims) and _batch_key(sorted_prims[j]) == key:
+            group.append(sorted_prims[j])
+            j += 1
+        i = j
+
+        ptype = key[0]
+        color = key[1]
+        filled = key[2]
+        thickness = key[3]
+        alpha = color[3]
+        rgb = color[:3]
+
+        # Batch filled circles (>1 element)
+        if ptype == DrawPrimitiveType.CIRCLE and filled and len(group) > 1:
+            circles = []
+            for p in group:
+                screen_pos = _transform_local_point(p.x, p.y, center, scale, cos_a, sin_a)
+                screen_radius = max(1, int(p.radius * scale))
+                circles.append((screen_pos, screen_radius))
+
+            if alpha < 255:
+                # For alpha circles, use polygon approximation batch
+                for c_pos, c_rad in circles:
+                    pts = _circle_to_polygon(c_pos, c_rad, 32)
+                    renderer.draw_polygon(pts, rgb, alpha)
+                    if thickness > 0:
+                        renderer.draw_polygon(pts, (0, 0, 0), alpha, thickness)
+            else:
+                renderer.draw_circles_batch(circles, rgb, alpha)
+                if thickness > 0:
+                    renderer.draw_circles_batch(circles, (0, 0, 0), 255, border=thickness)
+
+        # Batch lines (>1 element)
+        elif ptype == DrawPrimitiveType.LINE and len(group) > 1:
+            lines = []
+            line_thickness = thickness if thickness > 0 else 2
+            for p in group:
+                s = _transform_local_point(p.x, p.y, center, scale, cos_a, sin_a)
+                e = _transform_local_point(p.x2, p.y2, center, scale, cos_a, sin_a)
+                lines.append((s, e))
+            renderer.draw_lines_batch(lines, rgb, alpha, line_thickness)
+
+        # Non-batchable or single-element: fall through to individual draws
+        else:
+            for p in group:
+                _draw_single_primitive(renderer, p, center, scale, cos_a, sin_a, angle)
 
 
 def _transform_local_point(lx: float, ly: float,
@@ -490,18 +550,20 @@ def _draw_single_primitive(renderer: Renderer,
         if prim.filled:
             if alpha < 255:
                 pts = _circle_to_polygon(screen_pos, screen_radius, 32)
-                renderer.draw_polygon_alpha(pts, rgb, alpha)
-                renderer.draw_polygon_alpha(pts, (0, 0, 0), alpha, 2)
+                renderer.draw_polygon(pts, rgb, alpha)
+                if prim.thickness > 0:
+                    renderer.draw_polygon(pts, (0, 0, 0), alpha, prim.thickness)
             else:
                 renderer.draw_circle(screen_pos, screen_radius, rgb)
-                renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0), 2)
+                if prim.thickness > 0:
+                    renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0), border=prim.thickness)
         else:
             thickness = prim.thickness if prim.thickness > 0 else 2
             if alpha < 255:
                 pts = _circle_to_polygon(screen_pos, screen_radius, 32)
-                renderer.draw_polygon_alpha(pts, rgb, alpha, thickness)
+                renderer.draw_polygon(pts, rgb, alpha, thickness)
             else:
-                renderer.draw_circle(screen_pos, screen_radius, rgb, thickness)
+                renderer.draw_circle(screen_pos, screen_radius, rgb, border=thickness)
 
     elif prim.type == DrawPrimitiveType.BOX:
         screen_pos = _transform_local_point(prim.x, prim.y, center, scale, cos_a, sin_a)
@@ -522,17 +584,19 @@ def _draw_single_primitive(renderer: Renderer,
 
         if prim.filled:
             if alpha < 255:
-                renderer.draw_polygon_alpha(points, rgb, alpha)
-                renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
+                renderer.draw_polygon(points, rgb, alpha)
+                if prim.thickness > 0:
+                    renderer.draw_polygon(points, (0, 0, 0), alpha, prim.thickness)
             else:
                 renderer.draw_polygon(points, rgb)
-                renderer.draw_polygon(points, (0, 0, 0), 2)
+                if prim.thickness > 0:
+                    renderer.draw_polygon(points, (0, 0, 0), border=prim.thickness)
         else:
             thickness = prim.thickness if prim.thickness > 0 else 2
             if alpha < 255:
-                renderer.draw_polygon_alpha(points, rgb, alpha, thickness)
+                renderer.draw_polygon(points, rgb, alpha, thickness)
             else:
-                renderer.draw_polygon(points, rgb, thickness)
+                renderer.draw_polygon(points, rgb, border=thickness)
 
     elif prim.type in (DrawPrimitiveType.LINE, DrawPrimitiveType.ARROW):
         screen_start = _transform_local_point(prim.x, prim.y, center, scale, cos_a, sin_a)
@@ -540,10 +604,7 @@ def _draw_single_primitive(renderer: Renderer,
         thickness = prim.thickness if prim.thickness > 0 else 2
 
         if prim.type == DrawPrimitiveType.LINE:
-            if alpha < 255:
-                renderer.draw_line_alpha(screen_start, screen_end, rgb, alpha, thickness)
-            else:
-                renderer.draw_line(screen_start, screen_end, rgb, thickness)
+            renderer.draw_line(screen_start, screen_end, rgb, alpha, thickness)
         else:
             # ARROW: reuse draw_orientation_arrow
             draw_orientation_arrow(renderer, screen_start, screen_end, color, thickness)
@@ -556,17 +617,19 @@ def _draw_single_primitive(renderer: Renderer,
 
         if prim.filled:
             if alpha < 255:
-                renderer.draw_polygon_alpha(points, rgb, alpha)
-                renderer.draw_polygon_alpha(points, (0, 0, 0), alpha, 2)
+                renderer.draw_polygon(points, rgb, alpha)
+                if prim.thickness > 0:
+                    renderer.draw_polygon(points, (0, 0, 0), alpha, prim.thickness)
             else:
                 renderer.draw_polygon(points, rgb)
-                renderer.draw_polygon(points, (0, 0, 0), 2)
+                if prim.thickness > 0:
+                    renderer.draw_polygon(points, (0, 0, 0), border=prim.thickness)
         else:
             thickness = prim.thickness if prim.thickness > 0 else 2
             if alpha < 255:
-                renderer.draw_polygon_alpha(points, rgb, alpha, thickness)
+                renderer.draw_polygon(points, rgb, alpha, thickness)
             else:
-                renderer.draw_polygon(points, rgb, thickness)
+                renderer.draw_polygon(points, rgb, border=thickness)
 
     elif prim.type == DrawPrimitiveType.TEXT:
         screen_pos = _transform_local_point(prim.x, prim.y, center, scale, cos_a, sin_a)

@@ -151,13 +151,10 @@ class BackgroundRenderer:
                     world_to_screen(pt[0], pt[1])
                     for pt in field.world_points
                 ]
-                if field.background_alpha < 255:
-                    renderer.draw_polygon_alpha(
-                        screen_points, field.background_color,
-                        field.background_alpha
-                    )
-                else:
-                    renderer.draw_polygon(screen_points, field.background_color)
+                renderer.draw_polygon(
+                    screen_points, field.background_color,
+                    field.background_alpha
+                )
                 continue
 
             if not field.background_image:

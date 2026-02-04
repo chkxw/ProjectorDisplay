@@ -114,6 +114,8 @@ def _init_display_sdl1(screen_index: int) -> pygame.Surface:
 class Renderer(Protocol):
     """Protocol for rendering backends. Always fullscreen."""
 
+    # ── Lifecycle ──────────────────────────────────────────────
+
     def init(self, screen_index: int = 0) -> None:
         """Initialize renderer on specified display. Always fullscreen."""
         ...
@@ -124,71 +126,6 @@ class Renderer(Protocol):
 
     def clear(self, color: Tuple[int, int, int]) -> None:
         """Clear screen with specified color."""
-        ...
-
-    def draw_circle(self, center: Tuple[int, int], radius: int,
-                    color: Tuple[int, int, int], border: int = 0) -> None:
-        """Draw a circle. border=0 means filled."""
-        ...
-
-    def draw_polygon(self, points: List[Tuple[int, int]],
-                     color: Tuple[int, int, int], border: int = 0) -> None:
-        """Draw a polygon. border=0 means filled."""
-        ...
-
-    def draw_line(self, start: Tuple[int, int], end: Tuple[int, int],
-                  color: Tuple[int, int, int], width: int = 1) -> None:
-        """Draw a line."""
-        ...
-
-    def draw_lines(self, points: List[Tuple[int, int]],
-                   color: Tuple[int, int, int], width: int = 1,
-                   closed: bool = False) -> None:
-        """Draw connected line segments."""
-        ...
-
-    def draw_rect(self, rect: Tuple[int, int, int, int],
-                  color: Tuple[int, int, int], border: int = 0) -> None:
-        """Draw a rectangle. rect=(x, y, width, height). border=0 means filled."""
-        ...
-
-    def draw_line_batch(self, lines: List[Tuple[Tuple[int, int], Tuple[int, int],
-                                                Tuple[int, ...], int]]) -> None:
-        """Draw many lines in a single blit. Each line is (start, end, color_rgba, width)."""
-        ...
-
-    def draw_polygon_alpha(self, points: List[Tuple[int, int]],
-                           color: Tuple[int, int, int], alpha: int,
-                           border: int = 0) -> None:
-        """Draw a polygon with transparency."""
-        ...
-
-    def draw_line_alpha(self, start: Tuple[int, int], end: Tuple[int, int],
-                        color: Tuple[int, int, int], alpha: int,
-                        width: int = 1) -> None:
-        """Draw a line with transparency."""
-        ...
-
-    def draw_circle_alpha(self, center: Tuple[int, int], radius: int,
-                          color: Tuple[int, int, int], alpha: int,
-                          border: int = 0) -> None:
-        """Draw a circle with transparency."""
-        ...
-
-    def draw_text(self, text: str, position: Tuple[int, int],
-                  color: Tuple[int, int, int], font_size: int = 24,
-                  background: Optional[Tuple[int, int, int]] = None,
-                  angle: float = 0.0) -> None:
-        """Draw text at position. angle in degrees, counter-clockwise."""
-        ...
-
-    def create_image(self, rgba_bytes: bytes, width: int, height: int) -> Any:
-        """Create a renderer-specific image handle from RGBA pixel data."""
-        ...
-
-    def draw_image(self, handle: Any, position: Tuple[int, int],
-                   size: Tuple[int, int]) -> None:
-        """Draw a previously created image at position with given size."""
         ...
 
     def flip(self) -> None:
@@ -207,6 +144,84 @@ class Renderer(Protocol):
         """Cleanup and quit renderer."""
         ...
 
+    # ── Shape primitives (alpha=255 default -> opaque) ─────────
+
+    def draw_circle(self, center: Tuple[int, int], radius: int,
+                    color: Tuple[int, int, int], alpha: int = 255,
+                    border: int = 0) -> None:
+        """Draw a circle. border=0 means filled. alpha < 255 for transparency."""
+        ...
+
+    def draw_polygon(self, points: List[Tuple[int, int]],
+                     color: Tuple[int, int, int], alpha: int = 255,
+                     border: int = 0) -> None:
+        """Draw a polygon. border=0 means filled. alpha < 255 for transparency."""
+        ...
+
+    def draw_line(self, start: Tuple[int, int], end: Tuple[int, int],
+                  color: Tuple[int, int, int], alpha: int = 255,
+                  width: int = 1) -> None:
+        """Draw a line. alpha < 255 for transparency."""
+        ...
+
+    def draw_lines(self, points: List[Tuple[int, int]],
+                   color: Tuple[int, int, int], alpha: int = 255,
+                   width: int = 1, closed: bool = False) -> None:
+        """Draw connected line segments. alpha < 255 for transparency."""
+        ...
+
+    # ── Batch primitives ───────────────────────────────────────
+
+    def draw_line_batch(self, lines: List[Tuple[Tuple[int, int], Tuple[int, int],
+                                                Tuple[int, ...], int]]) -> None:
+        """Draw many lines in a single blit. Each line is (start, end, color_rgba, width)."""
+        ...
+
+    def draw_circles_batch(self, circles: List[Tuple[Tuple[int, int], int]],
+                           color: Tuple[int, int, int], alpha: int = 255,
+                           border: int = 0) -> None:
+        """Draw multiple circles with same color in a single batch.
+
+        Args:
+            circles: List of (center, radius) tuples
+            color: RGB color
+            alpha: Transparency (0-255)
+            border: Border width (0 = filled)
+        """
+        ...
+
+    def draw_lines_batch(self,
+                         lines: List[Tuple[Tuple[int, int], Tuple[int, int]]],
+                         color: Tuple[int, int, int], alpha: int = 255,
+                         width: int = 1) -> None:
+        """Draw multiple independent line segments with same color in a single batch.
+
+        Args:
+            lines: List of (start, end) tuples
+            color: RGB color
+            alpha: Transparency (0-255)
+            width: Line width
+        """
+        ...
+
+    # ── Text / Image ──────────────────────────────────────────
+
+    def draw_text(self, text: str, position: Tuple[int, int],
+                  color: Tuple[int, int, int], font_size: int = 24,
+                  background: Optional[Tuple[int, int, int]] = None,
+                  angle: float = 0.0) -> None:
+        """Draw text at position. angle in degrees, counter-clockwise."""
+        ...
+
+    def create_image(self, rgba_bytes: bytes, width: int, height: int) -> Any:
+        """Create a renderer-specific image handle from RGBA pixel data."""
+        ...
+
+    def draw_image(self, handle: Any, position: Tuple[int, int],
+                   size: Tuple[int, int]) -> None:
+        """Draw a previously created image at position with given size."""
+        ...
+
 
 class PygameRenderer:
     """Default renderer using pygame. Always fullscreen."""
@@ -217,6 +232,8 @@ class PygameRenderer:
         self.width: int = 0
         self.height: int = 0
         self._fonts: dict = {}  # Cache for fonts
+
+    # ── Lifecycle ──────────────────────────────────────────────
 
     def init(self, screen_index: int = 0) -> None:
         """
@@ -258,71 +275,56 @@ class PygameRenderer:
         if self.screen:
             self.screen.fill(color)
 
+    def flip(self) -> None:
+        """Update display."""
+        pygame.display.flip()
+
+    def tick(self, fps: int) -> float:
+        """Tick clock and return time since last tick."""
+        if self.clock:
+            return self.clock.tick(fps) / 1000.0
+        return 0.0
+
+    def get_events(self) -> List:
+        """Get pygame events (for input handling)."""
+        return pygame.event.get()
+
+    def quit(self) -> None:
+        """Cleanup and quit pygame."""
+        pygame.quit()
+
+    # ── Shape primitives ───────────────────────────────────────
+
     def draw_circle(self, center: Tuple[int, int], radius: int,
-                    color: Tuple[int, int, int], border: int = 0) -> None:
-        """Draw a circle."""
-        if self.screen:
-            pygame.draw.circle(self.screen, color, center, radius, border)
-
-    def draw_polygon(self, points: List[Tuple[int, int]],
-                     color: Tuple[int, int, int], border: int = 0) -> None:
-        """Draw a polygon."""
-        if self.screen and len(points) >= 3:
-            pygame.draw.polygon(self.screen, color, points, border)
-
-    def draw_line(self, start: Tuple[int, int], end: Tuple[int, int],
-                  color: Tuple[int, int, int], width: int = 1) -> None:
-        """Draw a line."""
-        if self.screen:
-            pygame.draw.line(self.screen, color, start, end, width)
-
-    def draw_lines(self, points: List[Tuple[int, int]],
-                   color: Tuple[int, int, int], width: int = 1,
-                   closed: bool = False) -> None:
-        """Draw connected line segments."""
-        if self.screen and len(points) >= 2:
-            pygame.draw.lines(self.screen, color, closed, points, width)
-
-    def draw_rect(self, rect: Tuple[int, int, int, int],
-                  color: Tuple[int, int, int], border: int = 0) -> None:
-        """Draw a rectangle."""
-        if self.screen:
-            pygame.draw.rect(self.screen, color, pygame.Rect(*rect), border)
-
-    def draw_text(self, text: str, position: Tuple[int, int],
-                  color: Tuple[int, int, int], font_size: int = 24,
-                  background: Optional[Tuple[int, int, int]] = None,
-                  angle: float = 0.0) -> None:
-        """Draw text at position. angle in degrees, counter-clockwise."""
-        if not self.screen:
+                    color: Tuple[int, int, int], alpha: int = 255,
+                    border: int = 0) -> None:
+        """Draw a circle. alpha < 255 uses a temp surface for transparency."""
+        if not self.screen or alpha == 0:
             return
 
-        # Get or create cached font
-        if font_size not in self._fonts:
-            self._fonts[font_size] = pygame.font.Font(None, font_size)
+        if alpha >= 255:
+            pygame.draw.circle(self.screen, color, center, radius, border)
+            return
 
-        font = self._fonts[font_size]
-        text_surface = font.render(text, True, color)
+        # Create surface for the circle
+        size = radius * 2 + 4
+        temp_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+        local_center = (radius + 2, radius + 2)
 
-        if background:
-            # Create background surface with padding
-            bg_rect = text_surface.get_rect().inflate(4, 2)
-            bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
-            bg_surface.fill((*background, 255))
-            bg_surface.blit(text_surface, (2, 1))
-            text_surface = bg_surface
+        circle_color = (*color[:3], alpha)
+        pygame.draw.circle(temp_surface, circle_color, local_center, radius, border)
 
-        if angle != 0.0:
-            text_surface = pygame.transform.rotate(text_surface, angle)
+        self.screen.blit(temp_surface, (center[0] - radius - 2, center[1] - radius - 2))
 
-        text_rect = text_surface.get_rect(center=position)
-        self.screen.blit(text_surface, text_rect)
+    def draw_polygon(self, points: List[Tuple[int, int]],
+                     color: Tuple[int, int, int], alpha: int = 255,
+                     border: int = 0) -> None:
+        """Draw a polygon. alpha < 255 uses a temp surface for transparency."""
+        if not self.screen or len(points) < 3 or alpha == 0:
+            return
 
-    def draw_polygon_alpha(self, points: List[Tuple[int, int]],
-                           color: Tuple[int, int, int], alpha: int,
-                           border: int = 0) -> None:
-        """Draw a polygon with transparency."""
-        if not self.screen or len(points) < 3:
+        if alpha >= 255:
+            pygame.draw.polygon(self.screen, color, points, border)
             return
 
         # Calculate bounding box
@@ -342,15 +344,14 @@ class PygameRenderer:
 
         self.screen.blit(temp_surface, (min_x - 2, min_y - 2))
 
-    def draw_line_alpha(self, start: Tuple[int, int], end: Tuple[int, int],
-                        color: Tuple[int, int, int], alpha: int,
-                        width: int = 1) -> None:
-        """Draw a line with transparency (ADR-8: RGBA support for trajectory gradients)."""
+    def draw_line(self, start: Tuple[int, int], end: Tuple[int, int],
+                  color: Tuple[int, int, int], alpha: int = 255,
+                  width: int = 1) -> None:
+        """Draw a line. alpha < 255 uses a temp surface for transparency."""
         if not self.screen or alpha == 0:
             return
 
         if alpha >= 255:
-            # No transparency needed
             pygame.draw.line(self.screen, color[:3], start, end, width)
             return
 
@@ -371,6 +372,37 @@ class PygameRenderer:
         pygame.draw.line(temp_surface, line_color, local_start, local_end, width)
 
         self.screen.blit(temp_surface, (min_x - 1, min_y - 1))
+
+    def draw_lines(self, points: List[Tuple[int, int]],
+                   color: Tuple[int, int, int], alpha: int = 255,
+                   width: int = 1, closed: bool = False) -> None:
+        """Draw connected line segments. alpha < 255 uses a temp surface."""
+        if not self.screen or len(points) < 2 or alpha == 0:
+            return
+
+        if alpha >= 255:
+            pygame.draw.lines(self.screen, color[:3], closed, points, width)
+            return
+
+        # Calculate bounding box with padding for line width
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        min_x = min(xs) - width
+        max_x = max(xs) + width
+        min_y = min(ys) - width
+        max_y = max(ys) + width
+        surf_width = max(1, max_x - min_x + 2)
+        surf_height = max(1, max_y - min_y + 2)
+
+        temp_surface = pygame.Surface((surf_width, surf_height), pygame.SRCALPHA)
+        local_points = [(p[0] - min_x + 1, p[1] - min_y + 1) for p in points]
+
+        line_color = (*color[:3], alpha)
+        pygame.draw.lines(temp_surface, line_color, closed, local_points, width)
+
+        self.screen.blit(temp_surface, (min_x - 1, min_y - 1))
+
+    # ── Batch primitives ───────────────────────────────────────
 
     def draw_line_batch(self, lines: List[Tuple[Tuple[int, int], Tuple[int, int],
                                                 Tuple[int, ...], int]]) -> None:
@@ -421,26 +453,55 @@ class PygameRenderer:
 
         self.screen.blit(temp_surface, (min_x - 1, min_y - 1))
 
-    def draw_circle_alpha(self, center: Tuple[int, int], radius: int,
-                          color: Tuple[int, int, int], alpha: int,
-                          border: int = 0) -> None:
-        """Draw a circle with transparency."""
-        if not self.screen or alpha == 0:
+    def draw_circles_batch(self, circles: List[Tuple[Tuple[int, int], int]],
+                           color: Tuple[int, int, int], alpha: int = 255,
+                           border: int = 0) -> None:
+        """Draw multiple circles with same color. Fallback: loop over individual draws."""
+        if not self.screen or not circles:
+            return
+        for center, radius in circles:
+            self.draw_circle(center, radius, color, alpha, border)
+
+    def draw_lines_batch(self,
+                         lines: List[Tuple[Tuple[int, int], Tuple[int, int]]],
+                         color: Tuple[int, int, int], alpha: int = 255,
+                         width: int = 1) -> None:
+        """Draw multiple independent line segments with same color. Fallback: loop."""
+        if not self.screen or not lines:
+            return
+        for start, end in lines:
+            self.draw_line(start, end, color, alpha, width)
+
+    # ── Text / Image ──────────────────────────────────────────
+
+    def draw_text(self, text: str, position: Tuple[int, int],
+                  color: Tuple[int, int, int], font_size: int = 24,
+                  background: Optional[Tuple[int, int, int]] = None,
+                  angle: float = 0.0) -> None:
+        """Draw text at position. angle in degrees, counter-clockwise."""
+        if not self.screen:
             return
 
-        if alpha >= 255:
-            pygame.draw.circle(self.screen, color[:3], center, radius, border)
-            return
+        # Get or create cached font
+        if font_size not in self._fonts:
+            self._fonts[font_size] = pygame.font.Font(None, font_size)
 
-        # Create surface for the circle
-        size = radius * 2 + 4
-        temp_surface = pygame.Surface((size, size), pygame.SRCALPHA)
-        local_center = (radius + 2, radius + 2)
+        font = self._fonts[font_size]
+        text_surface = font.render(text, True, color)
 
-        circle_color = (*color[:3], alpha)
-        pygame.draw.circle(temp_surface, circle_color, local_center, radius, border)
+        if background:
+            # Create background surface with padding
+            bg_rect = text_surface.get_rect().inflate(4, 2)
+            bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
+            bg_surface.fill((*background, 255))
+            bg_surface.blit(text_surface, (2, 1))
+            text_surface = bg_surface
 
-        self.screen.blit(temp_surface, (center[0] - radius - 2, center[1] - radius - 2))
+        if angle != 0.0:
+            text_surface = pygame.transform.rotate(text_surface, angle)
+
+        text_rect = text_surface.get_rect(center=position)
+        self.screen.blit(text_surface, text_rect)
 
     def create_image(self, rgba_bytes: bytes, width: int, height: int) -> pygame.Surface:
         """Create a pygame Surface from RGBA pixel data."""
@@ -465,21 +526,3 @@ class PygameRenderer:
             position: (x, y) position to blit at
         """
         self.draw_image(surface, position)
-
-    def flip(self) -> None:
-        """Update display."""
-        pygame.display.flip()
-
-    def tick(self, fps: int) -> float:
-        """Tick clock and return time since last tick."""
-        if self.clock:
-            return self.clock.tick(fps) / 1000.0
-        return 0.0
-
-    def get_events(self) -> List:
-        """Get pygame events (for input handling)."""
-        return pygame.event.get()
-
-    def quit(self) -> None:
-        """Cleanup and quit pygame."""
-        pygame.quit()

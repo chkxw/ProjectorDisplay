@@ -154,13 +154,13 @@ class GridLayer:
 
         if 0 <= origin_screen[0] < screen_w and 0 <= origin_screen[1] < screen_h:
             # Draw crosshair at origin
-            renderer.draw_circle(origin_screen, 10, (255, 255, 0), 2)
+            renderer.draw_circle(origin_screen, 10, (255, 255, 0), border=2)
             renderer.draw_line((origin_screen[0] - 15, origin_screen[1]),
                                (origin_screen[0] + 15, origin_screen[1]),
-                               (255, 255, 0), 2)
+                               (255, 255, 0), width=2)
             renderer.draw_line((origin_screen[0], origin_screen[1] - 15),
                                (origin_screen[0], origin_screen[1] + 15),
-                               (255, 255, 0), 2)
+                               (255, 255, 0), width=2)
 
 
 class FieldLayer:
@@ -221,7 +221,7 @@ class FieldLayer:
         screen_points_closed = screen_points + [screen_points[0]]
         for i in range(len(screen_points)):
             renderer.draw_line(screen_points_closed[i], screen_points_closed[i + 1],
-                               self.boundary_color, 2)
+                               self.boundary_color, width=2)
 
         # Draw corner markers
         corner_labels = ["BL", "BR", "TR", "TL"]
