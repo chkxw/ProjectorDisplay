@@ -292,40 +292,39 @@ class FieldCalibrator:
         transform_func = self.transform_matrix[from_field][to_field]
         return transform_func(coords)
 
-    def transform_orientation(self, field: str, position: Tuple[float, float],
-                              orientation: float, probe_distance: float = 0.1) -> float:
+    def transform_orientation(self, from_field: str, to_field: str,
+                              position: Tuple[float, float],
+                              orientation: float,
+                              probe_distance: float = 0.1) -> float:
         """
-        Transform orientation via two-point conversion.
+        Transform orientation between coordinate systems via two-point probe.
 
-        This is the correct way to transform angles between coordinate systems -
-        by converting two points and deriving the angle from their difference.
-        Transforms from world coordinates to field's local coordinates.
+        Probes in the source coordinate system, converts both points to the
+        target system, and derives the angle from their difference.
 
         Args:
-            field: Name of the field to transform to
-            position: (x, y) position in world coordinates (meters)
-            orientation: Angle in radians in world coordinate system
-            probe_distance: Distance to probe point for angle calculation (default 0.1m)
+            from_field: Source coordinate system ("base" for world)
+            to_field: Target coordinate system ("base" for world)
+            position: (x, y) in from_field coordinates
+            orientation: Angle in radians in from_field coordinate system
+            probe_distance: Probe offset in from_field units (default 0.1)
 
         Returns:
-            Transformed orientation in radians (in field's local coordinate system)
+            Orientation in radians in to_field coordinate system
         """
-        if field not in self.fields:
-            raise ValueError(f"Field '{field}' not registered")
-
-        # Create a probe point along the orientation direction
+        # Create a probe point along the orientation direction in source coords
         probe_point = (
             position[0] + probe_distance * cos(orientation),
             position[1] + probe_distance * sin(orientation)
         )
 
-        # Transform both points to local coordinates
-        screen_pos = self.convert(position, "base", field)
-        screen_probe = self.convert(probe_point, "base", field)
+        # Convert both points to target coordinates
+        target_pos = self.convert(position, from_field, to_field)
+        target_probe = self.convert(probe_point, from_field, to_field)
 
         # Calculate angle from the two transformed points
-        return atan2(screen_probe[1] - screen_pos[1],
-                     screen_probe[0] - screen_pos[0])
+        return atan2(target_probe[1] - target_pos[1],
+                     target_probe[0] - target_pos[0])
 
     def world_scale(self, world_pos: Tuple[float, float], distance: float) -> int:
         """
@@ -446,5 +445,5 @@ if __name__ == "__main__":
     import math
     world_pos = (50, 25)
     world_orientation = math.pi / 4  # 45 degrees
-    local_orientation = calibrator.transform_orientation("field_a", world_pos, world_orientation)
+    local_orientation = calibrator.transform_orientation("base", "field_a", world_pos, world_orientation)
     print(f"\nOrientation {math.degrees(world_orientation):.1f}deg at {world_pos} -> {math.degrees(local_orientation):.1f}deg in field_a")

@@ -593,7 +593,7 @@ class ProjectorDisplayServer:
             # Transform orientation via two-point method
             if "screen" in self.scene.field_calibrator.fields:
                 screen_orientation = self.scene.field_calibrator.transform_orientation(
-                    "screen", display_pos, effective_orientation
+                    "base", "screen", display_pos, effective_orientation
                 )
 
                 # Calculate arrow end point
@@ -669,8 +669,14 @@ class ProjectorDisplayServer:
             hh = fc.world_scale(draw_world_pos, prim.height * 0.5)
 
             if prim.angle != 0.0:
-                cos_a = math.cos(prim.angle)
-                sin_a = math.sin(prim.angle)
+                if "screen" in self.scene.field_calibrator.fields:
+                    screen_angle = self.scene.field_calibrator.transform_orientation(
+                        "base", "screen", draw_world_pos, prim.angle
+                    )
+                else:
+                    screen_angle = prim.angle
+                cos_a = math.cos(screen_angle)
+                sin_a = math.sin(screen_angle)
                 corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
                 points = []
                 for bx, by in corners:

@@ -92,6 +92,10 @@ def draw_box(scene, id: str, x: float, y: float,
         Response with status and id
     """
     world_x, world_y = _to_world(scene, x, y, field)
+    if angle != 0.0 and field != "base" and field in scene.field_calibrator.fields:
+        angle = scene.field_calibrator.transform_orientation(
+            field, "base", (x, y), angle, probe_distance=10.0,
+        )
     prim = DrawPrimitive(
         type=DrawPrimitiveType.BOX,
         width=width,

@@ -122,7 +122,8 @@ def update_position(scene, name: str, x: float, y: float,
         if orientation is not None:
             # F6: Use ORIGINAL field position for orientation transform
             orientation = scene.field_calibrator.transform_orientation(
-                field, original_field_pos, orientation
+                field, "base", original_field_pos, orientation,
+                probe_distance=10.0,
             )
 
     if scene.update_position(name, x, y, orientation):
