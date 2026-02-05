@@ -50,6 +50,50 @@ DEFAULT_UPDATE_RATE = 30  # Hz
 DEFAULT_BACKGROUND_COLOR = (0, 0, 0)  # Black
 
 
+class _TimingFC:
+    """Wraps FieldCalibrator to accumulate per-method transform timing."""
+
+    __slots__ = ('_fc', 't_convert', 't_world_scale', 't_orientation',
+                 'n_convert', 'n_world_scale', 'n_orientation')
+
+    def __init__(self, fc):
+        self._fc = fc
+        self.t_convert = 0.0
+        self.t_world_scale = 0.0
+        self.t_orientation = 0.0
+        self.n_convert = 0
+        self.n_world_scale = 0
+        self.n_orientation = 0
+
+    @property
+    def elapsed(self):
+        return self.t_convert + self.t_world_scale + self.t_orientation
+
+    def convert(self, *args, **kwargs):
+        t0 = time.perf_counter()
+        result = self._fc.convert(*args, **kwargs)
+        self.t_convert += time.perf_counter() - t0
+        self.n_convert += 1
+        return result
+
+    def world_scale(self, *args, **kwargs):
+        t0 = time.perf_counter()
+        result = self._fc.world_scale(*args, **kwargs)
+        self.t_world_scale += time.perf_counter() - t0
+        self.n_world_scale += 1
+        return result
+
+    def transform_orientation(self, *args, **kwargs):
+        t0 = time.perf_counter()
+        result = self._fc.transform_orientation(*args, **kwargs)
+        self.t_orientation += time.perf_counter() - t0
+        self.n_orientation += 1
+        return result
+
+    def __getattr__(self, name):
+        return getattr(self._fc, name)
+
+
 class _CalibrationDumper(yaml.SafeDumper):
     """YAML dumper that uses flow style for lists of scalars (e.g. coordinate pairs)."""
     pass
@@ -574,6 +618,13 @@ class ProjectorDisplayServer:
         # ADR-12: Position-aware size conversion
         fc = self.scene.field_calibrator
 
+        # When profiling, wrap fc to accumulate transform timing
+        _tfc = None
+        if p:
+            _tfc = _TimingFC(fc)
+            self.scene.field_calibrator = _tfc
+            fc = _tfc
+
         # Collect all renderables for z-order sorted rendering
         renderables = []
         for rb in rigidbodies_snapshot.values():
@@ -604,6 +655,13 @@ class ProjectorDisplayServer:
                     _max_body_t = max(_max_body_t, _dt)
                     _sum_body_t += _dt
             _t_render_total = time.perf_counter() - _t_render_start
+
+            # Restore original fc and record transform/draw split
+            self.scene.field_calibrator = _tfc._fc
+            _t_xform = _tfc.elapsed
+            _t_draw = _t_render_total - _t_xform
+            p.record("  xform", _t_xform)
+            p.record("  draw", _t_draw)
             p.mark("render")
 
             # Log render sub-breakdown every 60 frames
@@ -612,7 +670,12 @@ class ProjectorDisplayServer:
                 self.logger.info(
                     f"RENDER: {_n_bodies}rb + {_n_draws}draw in "
                     f"{_t_render_total*1000:.1f}ms "
-                    f"(avg/body={_avg_body:.1f}ms, "
+                    f"(xform={_t_xform*1000:.1f}ms "
+                    f"[convert={_tfc.t_convert*1000:.1f}ms×{_tfc.n_convert}, "
+                    f"world_scale={_tfc.t_world_scale*1000:.1f}ms×{_tfc.n_world_scale}, "
+                    f"orient={_tfc.t_orientation*1000:.1f}ms×{_tfc.n_orientation}], "
+                    f"draw={_t_draw*1000:.1f}ms, "
+                    f"avg/body={_avg_body:.1f}ms, "
                     f"max/body={_max_body_t*1000:.1f}ms)"
                 )
         else:

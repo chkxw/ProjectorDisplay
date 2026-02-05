@@ -139,6 +139,17 @@ class FrameProfiler:
             self._report()
             self._last_report = mono_now
 
+    def record(self, section: str, duration: float):
+        """Record an explicit duration for a named section.
+
+        Unlike mark() which measures inter-mark wall time, this records
+        an externally measured duration (e.g., accumulated across calls).
+        """
+        if section not in self._sections:
+            self._sections[section] = _Stats(self._window)
+            self._section_order.append(section)
+        self._sections[section].add(duration)
+
     def record_command(self, action: str, duration: float):
         """Record a command processing duration.
 
