@@ -749,6 +749,25 @@ class ProjectorDisplayServer:
         draw_rigidbody(self.renderer, rb, screen_pos, screen_size,
                        screen_orientation, orientation_end, label_offset_pixels)
 
+    def _draw_polygon_on_screen(self, points, rgb, alpha, filled, thickness):
+        """Draw a polygon with fill/outline handling.
+
+        Shared by BOX and POLYGON render paths.
+        """
+        if filled:
+            if alpha < 255:
+                self.renderer.draw_polygon(points, rgb, alpha)
+                self.renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
+            else:
+                self.renderer.draw_polygon(points, rgb)
+                self.renderer.draw_polygon(points, (0, 0, 0), border=2)
+        else:
+            thickness = thickness if thickness > 0 else 2
+            if alpha < 255:
+                self.renderer.draw_polygon(points, rgb, alpha, thickness)
+            else:
+                self.renderer.draw_polygon(points, rgb, border=thickness)
+
     def _render_drawing(self, drawing):
         """Render a single persistent drawing overlay.
 
@@ -776,47 +795,25 @@ class ProjectorDisplayServer:
                                           alpha=alpha, border=thickness)
 
         elif prim.type == DrawPrimitiveType.BOX:
-            screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
-            draw_world_pos = (drawing.world_x, drawing.world_y)
-            hw = fc.world_scale(draw_world_pos, prim.width * 0.5)
-            hh = fc.world_scale(draw_world_pos, prim.height * 0.5)
-
-            if prim.angle != 0.0:
-                if "screen" in self.scene.field_calibrator.fields:
-                    screen_angle = self.scene.field_calibrator.transform_orientation(
-                        "base", "screen", draw_world_pos, prim.angle
-                    )
-                else:
-                    screen_angle = prim.angle
-                cos_a = math.cos(screen_angle)
-                sin_a = math.sin(screen_angle)
+            if prim.vertices and len(prim.vertices) >= 3:
+                # Unified vertex-transform pipeline (same as POLYGON)
+                points = self.batch_world_to_screen(prim.vertices)
+                self._draw_polygon_on_screen(points, rgb, alpha, prim.filled, prim.thickness)
+            else:
+                # Fallback for legacy/compound BOX without precomputed vertices
+                screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
+                draw_world_pos = (drawing.world_x, drawing.world_y)
+                hw = fc.world_scale(draw_world_pos, prim.width * 0.5)
+                hh = fc.world_scale(draw_world_pos, prim.height * 0.5)
+                cos_a = math.cos(prim.angle)
+                sin_a = math.sin(prim.angle)
                 corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
                 points = []
                 for bx, by in corners:
                     rx = bx * cos_a - by * sin_a
                     ry = bx * sin_a + by * cos_a
                     points.append((screen_pos[0] + int(rx), screen_pos[1] + int(ry)))
-            else:
-                points = [
-                    (screen_pos[0] - hw, screen_pos[1] - hh),
-                    (screen_pos[0] + hw, screen_pos[1] - hh),
-                    (screen_pos[0] + hw, screen_pos[1] + hh),
-                    (screen_pos[0] - hw, screen_pos[1] + hh),
-                ]
-
-            if prim.filled:
-                if alpha < 255:
-                    self.renderer.draw_polygon(points, rgb, alpha)
-                    self.renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
-                else:
-                    self.renderer.draw_polygon(points, rgb)
-                    self.renderer.draw_polygon(points, (0, 0, 0), border=2)
-            else:
-                thickness = prim.thickness if prim.thickness > 0 else 2
-                if alpha < 255:
-                    self.renderer.draw_polygon(points, rgb, alpha, thickness)
-                else:
-                    self.renderer.draw_polygon(points, rgb, border=thickness)
+                self._draw_polygon_on_screen(points, rgb, alpha, prim.filled, prim.thickness)
 
         elif prim.type in (DrawPrimitiveType.LINE, DrawPrimitiveType.ARROW):
             screen_start = self.world_to_screen(drawing.world_x, drawing.world_y)
@@ -832,20 +829,8 @@ class ProjectorDisplayServer:
         elif prim.type == DrawPrimitiveType.POLYGON:
             if prim.vertices and len(prim.vertices) >= 3:
                 # Vertices stored as absolute world coords
-                points = [self.world_to_screen(vx, vy) for vx, vy in prim.vertices]
-                if prim.filled:
-                    if alpha < 255:
-                        self.renderer.draw_polygon(points, rgb, alpha)
-                        self.renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
-                    else:
-                        self.renderer.draw_polygon(points, rgb)
-                        self.renderer.draw_polygon(points, (0, 0, 0), border=2)
-                else:
-                    thickness = prim.thickness if prim.thickness > 0 else 2
-                    if alpha < 255:
-                        self.renderer.draw_polygon(points, rgb, alpha, thickness)
-                    else:
-                        self.renderer.draw_polygon(points, rgb, border=thickness)
+                points = self.batch_world_to_screen(prim.vertices)
+                self._draw_polygon_on_screen(points, rgb, alpha, prim.filled, prim.thickness)
 
         elif prim.type == DrawPrimitiveType.TEXT:
             screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)

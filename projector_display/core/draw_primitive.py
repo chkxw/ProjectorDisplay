@@ -95,6 +95,8 @@ class DrawPrimitive:
             data['width'] = self.width
             data['height'] = self.height
             data['angle'] = self.angle
+            if self.vertices:
+                data['vertices'] = [list(v) for v in self.vertices]
 
         elif self.type in (DrawPrimitiveType.LINE, DrawPrimitiveType.ARROW):
             data['x'] = self.x

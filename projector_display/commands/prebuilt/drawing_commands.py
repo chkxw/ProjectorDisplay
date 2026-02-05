@@ -5,6 +5,8 @@ Commands for creating and managing persistent drawing overlays.
 Drawings are positioned in field coordinates (converted to world at creation).
 """
 
+import math
+
 from projector_display.commands.base import register_command
 from projector_display.core.draw_primitive import DrawPrimitive, DrawPrimitiveType, Drawing
 from projector_display.utils.color import parse_color
@@ -91,21 +93,38 @@ def draw_box(scene, id: str, x: float, y: float,
     Returns:
         Response with status and id
     """
-    world_x, world_y = _to_world(scene, x, y, field)
-    if angle != 0.0 and field != "base" and field in scene.field_calibrator.fields:
-        angle = scene.field_calibrator.transform_orientation(
+    world_cx, world_cy = _to_world(scene, x, y, field)
+
+    # Transform angle from field to world (always, even when angle=0)
+    if field != "base" and field in scene.field_calibrator.fields:
+        world_angle = scene.field_calibrator.transform_orientation(
             field, "base", (x, y), angle, probe_distance=10.0,
         )
+    else:
+        world_angle = angle
+
+    # Compute 4 world-space corners (width/height are in meters)
+    hw, hh = width / 2.0, height / 2.0
+    cos_a = math.cos(world_angle)
+    sin_a = math.sin(world_angle)
+    world_verts = []
+    for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]:
+        wx = world_cx + lx * cos_a - ly * sin_a
+        wy = world_cy + lx * sin_a + ly * cos_a
+        world_verts.append((wx, wy))
+
     prim = DrawPrimitive(
         type=DrawPrimitiveType.BOX,
         width=width,
         height=height,
-        angle=angle,
+        angle=angle,        # keep original for serialization/debugging
+        vertices=world_verts,
         color=_parse_color_param(color),
         filled=filled,
         thickness=thickness,
     )
-    drawing = Drawing(id=id, primitive=prim, world_x=world_x, world_y=world_y,
+    drawing = Drawing(id=id, primitive=prim,
+                      world_x=world_cx, world_y=world_cy,
                       z_order=z_order)
     scene.add_drawing(drawing)
     result = {"status": "success", "id": id}
