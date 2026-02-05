@@ -144,6 +144,31 @@ if _gl_lib:
     _gl_ActiveTexture = _gl_lib.glActiveTexture
     _gl_ActiveTexture.argtypes = [_c_ui]
     _gl_ActiveTexture.restype = None
+else:
+    # Fallback to PyOpenGL wrappers — functional but 15-25x slower per call.
+    logger.warning(
+        "Using PyOpenGL wrappers for ALL GL calls — expect significantly "
+        "reduced rendering performance. Install a GLES2/GL shared library "
+        "for direct ctypes access."
+    )
+    _gl_ClearColor = glClearColor
+    _gl_Clear = glClear
+    _gl_UseProgram = glUseProgram
+    _gl_Uniform4f = glUniform4f
+    _gl_Uniform1i = glUniform1i
+    _gl_DrawArrays = glDrawArrays
+    _gl_LineWidth = glLineWidth
+    _gl_BindTexture = glBindTexture
+    _gl_ActiveTexture = glActiveTexture
+    _gl_EnableVertexAttribArray = glEnableVertexAttribArray
+
+    # These need wrappers: ctypes path passes raw int pointers,
+    # PyOpenGL expects ctypes.c_void_p or numpy arrays.
+    def _gl_BufferData(target, size, data_ptr, usage):
+        glBufferData(target, size, _ctypes.c_void_p(data_ptr), usage)
+
+    def _gl_VertexAttribPointer(index, size, type_, normalized, stride, pointer):
+        glVertexAttribPointer(index, size, type_, normalized, stride, pointer)
 
 _INV_255 = 1.0 / 255.0
 
@@ -246,11 +271,12 @@ _UNIT_CIRCLE_64 = _precompute_unit_circle(64)
 class GLESRenderer:
     """GPU-accelerated renderer using OpenGL ES 2.0 via pygame window."""
 
-    def __init__(self, fullscreen: bool = False):
+    def __init__(self, fullscreen: bool = False, benchmark: bool = True):
         self.width: int = 0
         self.height: int = 0
         self.clock: Optional[pygame.time.Clock] = None
         self._fullscreen = fullscreen
+        self._benchmark = benchmark
 
         # GL resources (set in init)
         self._solid_prog: int = 0
@@ -280,7 +306,7 @@ class GLESRenderer:
         self._text_cache: OrderedDict = OrderedDict()
 
         # Tracked GL textures for cleanup
-        self._owned_textures: list = []
+        self._owned_textures: set = set()
 
     def init(self, screen_index: int = 0) -> None:
         """Initialize pygame window with OpenGL context and compile shaders."""
@@ -403,12 +429,20 @@ class GLESRenderer:
             f"CONTEXT_CHECKING={OpenGL.CONTEXT_CHECKING}"
         )
 
-        # --- Micro-benchmarks ---
+        # --- Micro-benchmarks (optional, controlled by benchmark flag) ---
+        if self._benchmark:
+            self._run_benchmarks()
+
+        logger.info(f"GLESRenderer initialized: {self.width}x{self.height}")
+
+    def _run_benchmarks(self) -> None:
+        """Run GL micro-benchmarks to measure driver overhead."""
         import time as _time
 
-        # Bench 1: glClear only (GPU-side cost)
         _bench_n = 200
-        glFinish()  # drain pipeline first
+
+        # Bench 1: glClear only (GPU-side cost)
+        glFinish()
         _t0 = _time.perf_counter()
         for _ in range(_bench_n):
             glClear(GL_COLOR_BUFFER_BIT)
@@ -426,7 +460,6 @@ class GLESRenderer:
             [[100, 100], [200, 100], [200, 200], [100, 200]],
             dtype=np.float32,
         )
-        # Warm up
         for _ in range(10):
             glUniform4f(self._s_u_color, 1.0, 0.0, 0.0, 1.0)
             glBufferData(GL_ARRAY_BUFFER, _bench_verts.nbytes,
@@ -460,7 +493,6 @@ class GLESRenderer:
         if _gl_lib:
             _gl_UseProgram(self._solid_prog)
             self._current_prog = self._solid_prog
-            # Warm up ctypes path
             for _ in range(10):
                 _gl_Uniform4f(self._s_u_color, 1.0, 0.0, 0.0, 1.0)
                 _gl_BufferData(GL_ARRAY_BUFFER, _bench_verts.nbytes,
@@ -486,8 +518,6 @@ class GLESRenderer:
                 f"{(_t1-_t0)*1000:.1f}ms ({_per_ctypes_us:.0f}µs/draw) — "
                 f"speedup vs PyOpenGL: {_speedup:.1f}x"
             )
-
-        logger.info(f"GLESRenderer initialized: {self.width}x{self.height}")
 
     # ------ internal helpers ------
 
@@ -657,6 +687,9 @@ class GLESRenderer:
     def draw_polygon(self, points: List[Tuple[int, int]],
                      color: Tuple[int, int, int], alpha: int = 255,
                      border: int = 0) -> None:
+        # TODO: GL_TRIANGLE_FAN only works for convex polygons. Concave polygons
+        # will render incorrectly. If concave support is needed, add ear-clipping
+        # triangulation (e.g. mapbox-earcut).
         if len(points) < 3 or alpha == 0:
             return
         verts = np.array(points, dtype=np.float32)
@@ -705,15 +738,17 @@ class GLESRenderer:
                 segs = self._adaptive_segments(radius)
                 fan = self._circle_vertices(center[0], center[1], radius, segs)
                 # fan[0] is center, fan[1:] are ring vertices
-                # Convert fan to explicit triangles
-                cx, cy = fan[0]
-                for i in range(1, len(fan) - 1):
-                    all_tris.append(fan[0])
-                    all_tris.append(fan[i])
-                    all_tris.append(fan[i + 1])
+                # Convert fan to explicit triangles via numpy slicing
+                ring = fan[1:]
+                n_tris = len(ring) - 1
+                tris = np.empty((n_tris * 3, 2), dtype=np.float32)
+                tris[0::3] = fan[0]
+                tris[1::3] = ring[:-1]
+                tris[2::3] = ring[1:]
+                all_tris.append(tris)
 
             if all_tris:
-                verts = np.array(all_tris, dtype=np.float32)
+                verts = np.concatenate(all_tris)
                 self._draw_solid(verts, GL_TRIANGLES, color, alpha)
         else:
             # Outline circles: draw each individually (GL_LINE_LOOP can't be batched)
@@ -737,10 +772,7 @@ class GLESRenderer:
             self._current_line_width = width
 
         # Flatten to [start1, end1, start2, end2, ...] for GL_LINES
-        verts = np.empty((len(lines) * 2, 2), dtype=np.float32)
-        for i, (start, end) in enumerate(lines):
-            verts[i * 2] = start
-            verts[i * 2 + 1] = end
+        verts = np.array(lines, dtype=np.float32).reshape(-1, 2)
 
         self._draw_solid(verts, GL_LINES, color, alpha)
 
@@ -804,14 +836,13 @@ class GLESRenderer:
             rgba_data = pygame.image.tostring(text_surface, "RGBA", False)
 
             tex_id = self._upload_texture(rgba_data, tw, th)
-            self._owned_textures.append(tex_id)
+            self._owned_textures.add(tex_id)
 
             # Evict oldest if cache is full
             if len(self._text_cache) >= _TEXT_CACHE_MAX:
                 _, (old_tex, _, _) = self._text_cache.popitem(last=False)
                 glDeleteTextures(1, [old_tex])
-                if old_tex in self._owned_textures:
-                    self._owned_textures.remove(old_tex)
+                self._owned_textures.discard(old_tex)
 
             self._text_cache[key] = (tex_id, tw, th)
 
@@ -823,7 +854,7 @@ class GLESRenderer:
     def create_image(self, rgba_bytes: bytes, width: int, height: int) -> int:
         """Upload RGBA data to a GL texture. Returns texture ID."""
         tex_id = self._upload_texture(rgba_bytes, width, height)
-        self._owned_textures.append(tex_id)
+        self._owned_textures.add(tex_id)
         return tex_id
 
     def draw_image(self, handle: int, position: Tuple[int, int],
@@ -852,15 +883,15 @@ class GLESRenderer:
     def quit(self) -> None:
         """Delete all GL resources and quit pygame."""
         # Clean up text cache textures
-        tex_ids = [tid for tid, _, _ in self._text_cache.values()]
+        tex_ids = {tid for tid, _, _ in self._text_cache.values()}
         if tex_ids:
-            glDeleteTextures(len(tex_ids), tex_ids)
+            glDeleteTextures(len(tex_ids), list(tex_ids))
         self._text_cache.clear()
 
-        # Clean up any remaining owned textures
-        remaining = [t for t in self._owned_textures if t not in tex_ids]
+        # Clean up any remaining owned textures not in text cache
+        remaining = self._owned_textures - tex_ids
         if remaining:
-            glDeleteTextures(len(remaining), remaining)
+            glDeleteTextures(len(remaining), list(remaining))
         self._owned_textures.clear()
 
         pygame.quit()

@@ -47,14 +47,8 @@ def draw_circle(renderer: Renderer,
     alpha = color[3]
     rgb = color[:3]
 
-    if alpha < 255:
-        # Use transparency
-        points = _circle_to_polygon(center, radius, 32)
-        renderer.draw_polygon(points, rgb, alpha)
-        renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
-    else:
-        renderer.draw_circle(center, radius, rgb)
-        renderer.draw_circle(center, radius, (0, 0, 0), border=2)
+    renderer.draw_circle(center, radius, rgb, alpha=alpha)
+    renderer.draw_circle(center, radius, (0, 0, 0), alpha=alpha, border=2)
 
 
 def draw_box(renderer: Renderer,
@@ -482,17 +476,9 @@ def draw_compound(renderer: Renderer,
                 screen_radius = max(1, int(p.radius * scale))
                 circles.append((screen_pos, screen_radius))
 
-            if alpha < 255:
-                # For alpha circles, use polygon approximation batch
-                for c_pos, c_rad in circles:
-                    pts = _circle_to_polygon(c_pos, c_rad, 32)
-                    renderer.draw_polygon(pts, rgb, alpha)
-                    if thickness > 0:
-                        renderer.draw_polygon(pts, (0, 0, 0), alpha, thickness)
-            else:
-                renderer.draw_circles_batch(circles, rgb, alpha)
-                if thickness > 0:
-                    renderer.draw_circles_batch(circles, (0, 0, 0), 255, border=thickness)
+            renderer.draw_circles_batch(circles, rgb, alpha)
+            if thickness > 0:
+                renderer.draw_circles_batch(circles, (0, 0, 0), alpha, border=thickness)
 
         # Batch lines (>1 element)
         elif ptype == DrawPrimitiveType.LINE and len(group) > 1:
@@ -548,22 +534,14 @@ def _draw_single_primitive(renderer: Renderer,
         screen_radius = max(1, int(prim.radius * scale))
 
         if prim.filled:
-            if alpha < 255:
-                pts = _circle_to_polygon(screen_pos, screen_radius, 32)
-                renderer.draw_polygon(pts, rgb, alpha)
-                if prim.thickness > 0:
-                    renderer.draw_polygon(pts, (0, 0, 0), alpha, prim.thickness)
-            else:
-                renderer.draw_circle(screen_pos, screen_radius, rgb)
-                if prim.thickness > 0:
-                    renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0), border=prim.thickness)
+            renderer.draw_circle(screen_pos, screen_radius, rgb, alpha=alpha)
+            if prim.thickness > 0:
+                renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0),
+                                     alpha=alpha, border=prim.thickness)
         else:
             thickness = prim.thickness if prim.thickness > 0 else 2
-            if alpha < 255:
-                pts = _circle_to_polygon(screen_pos, screen_radius, 32)
-                renderer.draw_polygon(pts, rgb, alpha, thickness)
-            else:
-                renderer.draw_circle(screen_pos, screen_radius, rgb, border=thickness)
+            renderer.draw_circle(screen_pos, screen_radius, rgb,
+                                 alpha=alpha, border=thickness)
 
     elif prim.type == DrawPrimitiveType.BOX:
         screen_pos = _transform_local_point(prim.x, prim.y, center, scale, cos_a, sin_a)

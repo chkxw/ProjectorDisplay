@@ -704,22 +704,13 @@ class ProjectorDisplayServer:
             draw_world_pos = (drawing.world_x, drawing.world_y)
             screen_radius = fc.world_scale(draw_world_pos, prim.radius)
             if prim.filled:
-                if alpha < 255:
-                    from projector_display.rendering.primitives import _circle_to_polygon
-                    pts = _circle_to_polygon(screen_pos, screen_radius, 32)
-                    self.renderer.draw_polygon(pts, rgb, alpha)
-                    self.renderer.draw_polygon(pts, (0, 0, 0), alpha, 2)
-                else:
-                    self.renderer.draw_circle(screen_pos, screen_radius, rgb)
-                    self.renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0), border=2)
+                self.renderer.draw_circle(screen_pos, screen_radius, rgb, alpha=alpha)
+                self.renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0),
+                                          alpha=alpha, border=2)
             else:
                 thickness = prim.thickness if prim.thickness > 0 else 2
-                if alpha < 255:
-                    from projector_display.rendering.primitives import _circle_to_polygon
-                    pts = _circle_to_polygon(screen_pos, screen_radius, 32)
-                    self.renderer.draw_polygon(pts, rgb, alpha, thickness)
-                else:
-                    self.renderer.draw_circle(screen_pos, screen_radius, rgb, border=thickness)
+                self.renderer.draw_circle(screen_pos, screen_radius, rgb,
+                                          alpha=alpha, border=thickness)
 
         elif prim.type == DrawPrimitiveType.BOX:
             screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
