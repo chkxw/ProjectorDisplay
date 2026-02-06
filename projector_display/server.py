@@ -398,7 +398,7 @@ class ProjectorDisplayServer:
         """
         try:
             if self.renderer_backend == "gles":
-                from projector_display.rendering.gles_renderer import GLESRenderer
+                from projector_display.rendering.renderer.gles_renderer import GLESRenderer
                 self.logger.info("Using GLES2 renderer")
                 self.renderer = GLESRenderer(fullscreen=self.fullscreen)
             else:
@@ -745,9 +745,16 @@ class ProjectorDisplayServer:
                 draw_trajectory(self.renderer, screen_traj, rb.trajectory_style,
                                 scale_at_pos)
 
+        # Compute world-space params for vertex-transform pipeline
+        effective_orientation = rb.get_effective_orientation()
+
         # Draw the rigid body
         draw_rigidbody(self.renderer, rb, screen_pos, screen_size,
-                       screen_orientation, orientation_end, label_offset_pixels)
+                       screen_orientation, orientation_end, label_offset_pixels,
+                       body_world_pos=display_pos,
+                       body_size=rb.style.size,
+                       body_world_angle=effective_orientation,
+                       world_to_screen_batch_fn=self.batch_world_to_screen)
 
     def _draw_polygon_on_screen(self, points, rgb, alpha, filled, thickness):
         """Draw a polygon with fill/outline handling.
@@ -782,17 +789,23 @@ class ProjectorDisplayServer:
         # ADR-12: Position-aware size conversion for drawings
         fc = self.scene.field_calibrator
         if prim.type == DrawPrimitiveType.CIRCLE:
-            screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
-            draw_world_pos = (drawing.world_x, drawing.world_y)
-            screen_radius = fc.world_scale(draw_world_pos, prim.radius)
-            if prim.filled:
-                self.renderer.draw_circle(screen_pos, screen_radius, rgb, alpha=alpha)
-                self.renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0),
-                                          alpha=alpha, border=2)
+            if prim.vertices and len(prim.vertices) >= 3:
+                # Vertex-transform pipeline (circle approximated as polygon)
+                points = self.batch_world_to_screen(prim.vertices)
+                self._draw_polygon_on_screen(points, rgb, alpha, prim.filled, prim.thickness)
             else:
-                thickness = prim.thickness if prim.thickness > 0 else 2
-                self.renderer.draw_circle(screen_pos, screen_radius, rgb,
-                                          alpha=alpha, border=thickness)
+                # Fallback for legacy data without precomputed vertices
+                screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
+                draw_world_pos = (drawing.world_x, drawing.world_y)
+                screen_radius = fc.world_scale(draw_world_pos, prim.radius)
+                if prim.filled:
+                    self.renderer.draw_circle(screen_pos, screen_radius, rgb, alpha=alpha)
+                    self.renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0),
+                                              alpha=alpha, border=2)
+                else:
+                    thickness = prim.thickness if prim.thickness > 0 else 2
+                    self.renderer.draw_circle(screen_pos, screen_radius, rgb,
+                                              alpha=alpha, border=thickness)
 
         elif prim.type == DrawPrimitiveType.BOX:
             if prim.vertices and len(prim.vertices) >= 3:

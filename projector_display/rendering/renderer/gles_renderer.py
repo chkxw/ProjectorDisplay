@@ -51,7 +51,7 @@ from OpenGL.GL import (
 )
 from OpenGL.GL import glFinish
 
-from projector_display.rendering.renderer import (
+from projector_display.rendering.renderer.base import (
     _get_sdl_version, _get_display_position_xrandr,
 )
 

@@ -31,7 +31,7 @@ def _parse_color_param(color, default=(255, 255, 255, 255)):
 def draw_circle(scene, id: str, x: float, y: float, radius: float,
                 color=None, field: str = "base",
                 filled: bool = True, thickness: int = 0,
-                z_order: int = 0) -> dict:
+                z_order: int = 0, segments: int = 32) -> dict:
     """
     Draw a persistent circle overlay.
 
@@ -46,19 +46,31 @@ def draw_circle(scene, id: str, x: float, y: float, radius: float,
         filled: Whether to fill (default True)
         thickness: Outline thickness in pixels (used when filled=False)
         z_order: Render order (lower = behind, default 0)
+        segments: Number of polygon segments for circle approximation (default 32)
 
     Returns:
         Response with status and id
     """
-    world_x, world_y = _to_world(scene, x, y, field)
+    world_cx, world_cy = _to_world(scene, x, y, field)
+
+    # Compute world-space polygon vertices (circle → N-gon)
+    world_verts = []
+    for i in range(segments):
+        theta = 2 * math.pi * i / segments
+        wx = world_cx + radius * math.cos(theta)
+        wy = world_cy + radius * math.sin(theta)
+        world_verts.append((wx, wy))
+
     prim = DrawPrimitive(
         type=DrawPrimitiveType.CIRCLE,
         radius=radius,
+        circle_segments=segments,
+        vertices=world_verts,
         color=_parse_color_param(color),
         filled=filled,
         thickness=thickness,
     )
-    drawing = Drawing(id=id, primitive=prim, world_x=world_x, world_y=world_y,
+    drawing = Drawing(id=id, primitive=prim, world_x=world_cx, world_y=world_cy,
                       z_order=z_order)
     scene.add_drawing(drawing)
     result = {"status": "success", "id": id}

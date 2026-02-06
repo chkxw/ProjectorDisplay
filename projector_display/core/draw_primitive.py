@@ -65,6 +65,9 @@ class DrawPrimitive:
     # POLYGON
     vertices: Optional[List[Tuple[float, float]]] = None
 
+    # CIRCLE polygon approximation
+    circle_segments: int = 32  # Number of polygon segments for circle approximation
+
     # TEXT
     text: str = ""
     font_size: int = 24
@@ -88,6 +91,10 @@ class DrawPrimitive:
             data['x'] = self.x
             data['y'] = self.y
             data['radius'] = self.radius
+            if self.circle_segments != 32:
+                data['circle_segments'] = self.circle_segments
+            if self.vertices:
+                data['vertices'] = [list(v) for v in self.vertices]
 
         elif self.type == DrawPrimitiveType.BOX:
             data['x'] = self.x
@@ -133,6 +140,7 @@ class DrawPrimitive:
             height=data.get('height', 0.1),
             angle=data.get('angle', 0.0),
             vertices=[tuple(v) for v in data['vertices']] if data.get('vertices') else None,
+            circle_segments=data.get('circle_segments', 32),
             text=data.get('text', ''),
             font_size=data.get('font_size', 24),
             color=parse_color(data.get('color', [255, 255, 255, 255])),

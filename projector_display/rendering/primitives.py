@@ -30,183 +30,6 @@ def _ensure_rgba(color: Union[Tuple[int, ...], List[int]]) -> ColorRGBA:
     return (color[0], color[1], color[2], color[3])
 
 
-def draw_circle(renderer: Renderer,
-                center: Tuple[int, int],
-                radius: int,
-                color: ColorRGBA) -> None:
-    """
-    Draw a circle shape.
-
-    Args:
-        renderer: Renderer instance
-        center: Screen coordinates (x, y)
-        radius: Radius in pixels
-        color: RGBA color tuple
-    """
-    color = _ensure_rgba(color)
-    alpha = color[3]
-    rgb = color[:3]
-
-    renderer.draw_circle(center, radius, rgb, alpha=alpha)
-    renderer.draw_circle(center, radius, (0, 0, 0), alpha=alpha, border=2)
-
-
-def draw_box(renderer: Renderer,
-             center: Tuple[int, int],
-             size: int,
-             color: ColorRGBA,
-             angle: Optional[float] = None) -> None:
-    """
-    Draw a box/square shape, optionally rotated.
-
-    Args:
-        renderer: Renderer instance
-        center: Screen coordinates (x, y)
-        size: Half-size in pixels (full box is 2*size x 2*size)
-        color: RGBA color tuple
-        angle: Rotation angle in radians (screen coordinates). None = axis-aligned.
-    """
-    color = _ensure_rgba(color)
-    alpha = color[3]
-    rgb = color[:3]
-
-    if angle is not None:
-        cos_a = math.cos(angle)
-        sin_a = math.sin(angle)
-
-        # Box corners in local coordinates
-        corners = [
-            (-size, -size),
-            (size, -size),
-            (size, size),
-            (-size, size)
-        ]
-
-        # Rotate and translate
-        points = []
-        for px, py in corners:
-            rx = px * cos_a - py * sin_a
-            ry = px * sin_a + py * cos_a
-            points.append((center[0] + int(rx), center[1] + int(ry)))
-    else:
-        # Axis-aligned box
-        points = [
-            (center[0] - size, center[1] - size),
-            (center[0] + size, center[1] - size),
-            (center[0] + size, center[1] + size),
-            (center[0] - size, center[1] + size),
-        ]
-
-    if alpha < 255:
-        renderer.draw_polygon(points, rgb, alpha)
-        renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
-    else:
-        renderer.draw_polygon(points, rgb)
-        renderer.draw_polygon(points, (0, 0, 0), border=2)
-
-
-def draw_triangle(renderer: Renderer,
-                  center: Tuple[int, int],
-                  size: int,
-                  color: ColorRGBA,
-                  angle: Optional[float] = None) -> None:
-    """
-    Draw a triangle shape pointing in the direction of angle.
-
-    Args:
-        renderer: Renderer instance
-        center: Screen coordinates (x, y)
-        size: Size in pixels
-        color: RGBA color tuple
-        angle: Direction angle in radians (screen coordinates). None = pointing up.
-    """
-    color = _ensure_rgba(color)
-    alpha = color[3]
-    rgb = color[:3]
-
-    if angle is not None:
-        cos_a = math.cos(angle)
-        sin_a = math.sin(angle)
-
-        # Triangle points in local coordinates (pointing right when angle=0)
-        points_local = [
-            (size, 0),  # Tip
-            (-size * 0.5, -size * 0.866),  # Back left
-            (-size * 0.5, size * 0.866)   # Back right
-        ]
-
-        # Rotate and translate
-        points = []
-        for px, py in points_local:
-            rx = px * cos_a - py * sin_a
-            ry = px * sin_a + py * cos_a
-            points.append((center[0] + int(rx), center[1] + int(ry)))
-    else:
-        # Default upward-pointing triangle
-        points = [
-            (center[0], center[1] - size),
-            (center[0] - int(size * 0.866), center[1] + int(size * 0.5)),
-            (center[0] + int(size * 0.866), center[1] + int(size * 0.5))
-        ]
-
-    if alpha < 255:
-        renderer.draw_polygon(points, rgb, alpha)
-        renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
-    else:
-        renderer.draw_polygon(points, rgb)
-        renderer.draw_polygon(points, (0, 0, 0), border=2)
-
-
-def draw_polygon(renderer: Renderer,
-                 center: Tuple[int, int],
-                 vertices: List[Tuple[float, float]],
-                 scale: float,
-                 color: ColorRGBA,
-                 angle: Optional[float] = None) -> None:
-    """
-    Draw a custom polygon shape.
-
-    Args:
-        renderer: Renderer instance
-        center: Screen coordinates (x, y)
-        vertices: List of (x, y) vertices relative to center (in normalized units)
-        scale: Scale factor (pixels per unit)
-        color: RGBA color tuple
-        angle: Rotation angle in radians. None = no rotation.
-    """
-    color = _ensure_rgba(color)
-    alpha = color[3]
-    rgb = color[:3]
-
-    if len(vertices) < 3:
-        return
-
-    if angle is not None:
-        cos_a = math.cos(angle)
-        sin_a = math.sin(angle)
-
-        points = []
-        for vx, vy in vertices:
-            px = vx * scale
-            py = vy * scale
-            rx = px * cos_a - py * sin_a
-            ry = px * sin_a + py * cos_a
-            points.append((center[0] + int(rx), center[1] + int(ry)))
-    else:
-        points = []
-        for vx, vy in vertices:
-            px = center[0] + int(vx * scale)
-            py = center[1] + int(vy * scale)
-            points.append((px, py))
-
-    if alpha < 255:
-        renderer.draw_polygon(points, rgb, alpha)
-        renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
-    else:
-        renderer.draw_polygon(points, rgb)
-        renderer.draw_polygon(points, (0, 0, 0), border=2)
-
-
 def draw_orientation_arrow(renderer: Renderer,
                            start: Tuple[int, int],
                            end: Tuple[int, int],
@@ -270,44 +93,95 @@ def draw_rigidbody(renderer: Renderer,
                    screen_pos: Tuple[int, int],
                    screen_size: int,
                    screen_orientation: Optional[float],
-                   orientation_end: Optional[Tuple[int, int]] = None,
-                   label_offset_pixels: Tuple[int, int] = (0, 0)) -> None:
+                   orientation_end: Optional[Tuple[int, int]],
+                   label_offset_pixels: Tuple[int, int],
+                   body_world_pos: Tuple[float, float],
+                   body_size: float,
+                   body_world_angle: float,
+                   world_to_screen_batch_fn: Callable) -> None:
     """
     Draw a complete rigid body with shape, orientation arrow, and label.
 
-    This is the single render path for all rigid bodies - ensures consistent
-    handling of orientation transformation.
+    Uses the vertex-transform pipeline: compute world vertices, batch-convert
+    to screen via homography, then draw screen polygons.
 
     Args:
         renderer: Renderer instance
         rigidbody: RigidBody to draw
-        screen_pos: Position in screen coordinates
-        screen_size: Size in pixels
-        screen_orientation: Orientation in screen coordinates (radians)
+        screen_pos: Position in screen coordinates (for label/tracking)
+        screen_size: Size in pixels (for tracking-lost outline)
+        screen_orientation: Orientation in screen coordinates (radians, for tracking-lost)
         orientation_end: End point of orientation arrow in screen coordinates
         label_offset_pixels: Label offset in pixels
+        body_world_pos: World-space position (x, y)
+        body_size: World-space size (meters)
+        body_world_angle: World-space orientation (radians)
+        world_to_screen_batch_fn: Callable that converts list of world points to screen points
     """
     style = rigidbody.style
+    batch_fn = world_to_screen_batch_fn
+
+    color = _ensure_rgba(style.color)
+    alpha = color[3]
+    rgb = color[:3]
+    cos_b = math.cos(body_world_angle)
+    sin_b = math.sin(body_world_angle)
 
     # Draw shape based on type (ADR-8: colors are RGBA)
     if style.shape == RigidBodyShape.CIRCLE:
-        draw_circle(renderer, screen_pos, screen_size, style.color)
+        # Circle → N-gon polygon in world space
+        world_verts = []
+        for i in range(32):
+            theta = 2.0 * math.pi * i / 32
+            wx = body_world_pos[0] + body_size * math.cos(theta)
+            wy = body_world_pos[1] + body_size * math.sin(theta)
+            world_verts.append((wx, wy))
+        screen_pts = batch_fn(world_verts)
+        _draw_polygon_filled_or_outline(renderer, screen_pts, rgb, alpha, True, 0)
 
     elif style.shape == RigidBodyShape.BOX:
-        draw_box(renderer, screen_pos, screen_size, style.color, screen_orientation)
+        # 4 world corners using body angle
+        corners_local = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+        world_verts = []
+        for lx, ly in corners_local:
+            sx = lx * body_size
+            sy = ly * body_size
+            wx = body_world_pos[0] + sx * cos_b - sy * sin_b
+            wy = body_world_pos[1] + sx * sin_b + sy * cos_b
+            world_verts.append((wx, wy))
+        screen_pts = batch_fn(world_verts)
+        _draw_polygon_filled_or_outline(renderer, screen_pts, rgb, alpha, True, 0)
 
     elif style.shape == RigidBodyShape.TRIANGLE:
-        draw_triangle(renderer, screen_pos, screen_size, style.color, screen_orientation)
+        # 3 world vertices (pointing in orientation direction)
+        tri_local = [(1.0, 0.0), (-0.5, -0.866), (-0.5, 0.866)]
+        world_verts = []
+        for lx, ly in tri_local:
+            sx = lx * body_size
+            sy = ly * body_size
+            wx = body_world_pos[0] + sx * cos_b - sy * sin_b
+            wy = body_world_pos[1] + sx * sin_b + sy * cos_b
+            world_verts.append((wx, wy))
+        screen_pts = batch_fn(world_verts)
+        _draw_polygon_filled_or_outline(renderer, screen_pts, rgb, alpha, True, 0)
 
     elif style.shape == RigidBodyShape.POLYGON:
-        if style.polygon_vertices:
-            draw_polygon(renderer, screen_pos, style.polygon_vertices,
-                         screen_size, style.color, screen_orientation)
+        if style.polygon_vertices and len(style.polygon_vertices) >= 3:
+            world_verts = []
+            for vx, vy in style.polygon_vertices:
+                sx = vx * body_size
+                sy = vy * body_size
+                wx = body_world_pos[0] + sx * cos_b - sy * sin_b
+                wy = body_world_pos[1] + sx * sin_b + sy * cos_b
+                world_verts.append((wx, wy))
+            screen_pts = batch_fn(world_verts)
+            _draw_polygon_filled_or_outline(renderer, screen_pts, rgb, alpha, True, 0)
 
     elif style.shape == RigidBodyShape.COMPOUND:
         if style.draw_list:
-            draw_compound(renderer, screen_pos, screen_size,
-                          style.draw_list, screen_orientation)
+            draw_compound(renderer, style.draw_list,
+                          body_world_pos, body_size,
+                          body_world_angle, batch_fn)
 
     # Draw tracking lost indicator (thick red outline)
     if rigidbody.tracking_lost:
@@ -324,18 +198,6 @@ def draw_rigidbody(renderer: Renderer,
     # Draw label if enabled
     if style.label:
         draw_label(renderer, rigidbody.name, screen_pos, label_offset_pixels)
-
-
-def _circle_to_polygon(center: Tuple[int, int], radius: int,
-                       num_points: int = 32) -> List[Tuple[int, int]]:
-    """Convert circle to polygon points for alpha rendering."""
-    points = []
-    for i in range(num_points):
-        angle = 2 * math.pi * i / num_points
-        x = center[0] + int(radius * math.cos(angle))
-        y = center[1] + int(radius * math.sin(angle))
-        points.append((x, y))
-    return points
 
 
 def _draw_tracking_lost_outline(renderer: Renderer,
@@ -416,199 +278,146 @@ def _draw_tracking_lost_outline(renderer: Renderer,
         renderer.draw_circle(center, size, TRACKING_LOST_COLOR, border=TRACKING_LOST_THICKNESS)
 
 
-def _batch_key(prim: DrawPrimitive) -> tuple:
-    """Create a grouping key for batching consecutive primitives."""
-    color = _ensure_rgba(prim.color)
-    return (prim.type, color, prim.filled, prim.thickness, prim.z_order)
+def _draw_polygon_filled_or_outline(renderer: Renderer,
+                                     points: List[Tuple[int, int]],
+                                     rgb: Tuple[int, int, int],
+                                     alpha: int, filled: bool,
+                                     thickness: int) -> None:
+    """Draw a polygon with fill/outline handling."""
+    if filled:
+        if alpha < 255:
+            renderer.draw_polygon(points, rgb, alpha)
+            renderer.draw_polygon(points, (0, 0, 0), alpha, 2)
+        else:
+            renderer.draw_polygon(points, rgb)
+            renderer.draw_polygon(points, (0, 0, 0), border=2)
+    else:
+        thickness = thickness if thickness > 0 else 2
+        if alpha < 255:
+            renderer.draw_polygon(points, rgb, alpha, thickness)
+        else:
+            renderer.draw_polygon(points, rgb, border=thickness)
+
+
+def _local_to_world(lx: float, ly: float,
+                    body_pos: Tuple[float, float],
+                    body_size: float,
+                    cos_b: float, sin_b: float) -> Tuple[float, float]:
+    """Transform body-local point to world coordinates."""
+    sx = lx * body_size
+    sy = ly * body_size
+    wx = body_pos[0] + sx * cos_b - sy * sin_b
+    wy = body_pos[1] + sx * sin_b + sy * cos_b
+    return (wx, wy)
 
 
 def draw_compound(renderer: Renderer,
-                  center: Tuple[int, int],
-                  scale: int,
                   primitives: List[DrawPrimitive],
-                  angle: Optional[float] = None) -> None:
+                  body_world_pos: Tuple[float, float],
+                  body_size: float,
+                  body_world_angle: float,
+                  world_to_screen_batch_fn: Callable,
+                  circle_segments: int = 32) -> None:
     """
-    Draw a compound shape from a list of DrawPrimitives.
+    Draw a compound shape using the vertex-transform pipeline.
 
-    Groups consecutive primitives with the same type/color/style for batched
-    rendering when possible (filled circles -> draw_circles_batch, lines ->
-    draw_lines_batch). Non-batchable types and single-element groups
-    fall through to _draw_single_primitive.
+    Each primitive's local vertices are transformed to world coordinates,
+    then batch-converted to screen coordinates via homography.
+
+    For efficiency, all world vertices across all primitives are collected
+    into one list, converted in a single batch call, then distributed back.
 
     Args:
         renderer: Renderer instance
-        center: Body position in screen coordinates
-        scale: Pixels per local unit (from world_scale(pos, style.size))
         primitives: List of DrawPrimitive definitions
-        angle: Body orientation in screen radians
+        body_world_pos: Body position in world coordinates
+        body_size: Body size in world units (local→world scale)
+        body_world_angle: Body orientation in world radians
+        world_to_screen_batch_fn: Batch world→screen converter
+        circle_segments: Segments for circle polygon approximation
     """
-    cos_a = math.cos(angle) if angle is not None else 1.0
-    sin_a = math.sin(angle) if angle is not None else 0.0
+    cos_b = math.cos(body_world_angle)
+    sin_b = math.sin(body_world_angle)
 
     sorted_prims = sorted(primitives, key=lambda p: p.z_order)
 
-    # Group consecutive primitives with same batch key
-    i = 0
-    while i < len(sorted_prims):
-        prim = sorted_prims[i]
-        key = _batch_key(prim)
+    # Phase 1: Collect all world vertices and record per-primitive ranges
+    all_world = []
+    prim_ranges = []  # (start_idx, count, prim)
 
-        # Collect consecutive primitives with the same key
-        group = [prim]
-        j = i + 1
-        while j < len(sorted_prims) and _batch_key(sorted_prims[j]) == key:
-            group.append(sorted_prims[j])
-            j += 1
-        i = j
+    for prim in sorted_prims:
+        start = len(all_world)
 
-        ptype = key[0]
-        color = key[1]
-        filled = key[2]
-        thickness = key[3]
+        if prim.type == DrawPrimitiveType.CIRCLE:
+            for i in range(circle_segments):
+                theta = 2.0 * math.pi * i / circle_segments
+                lx = prim.x + prim.radius * math.cos(theta)
+                ly = prim.y + prim.radius * math.sin(theta)
+                all_world.append(_local_to_world(lx, ly, body_world_pos,
+                                                 body_size, cos_b, sin_b))
+
+        elif prim.type == DrawPrimitiveType.BOX:
+            hw, hh = prim.width / 2.0, prim.height / 2.0
+            cos_p = math.cos(prim.angle)
+            sin_p = math.sin(prim.angle)
+            for dx, dy in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]:
+                lx = prim.x + dx * cos_p - dy * sin_p
+                ly = prim.y + dx * sin_p + dy * cos_p
+                all_world.append(_local_to_world(lx, ly, body_world_pos,
+                                                 body_size, cos_b, sin_b))
+
+        elif prim.type in (DrawPrimitiveType.LINE, DrawPrimitiveType.ARROW):
+            all_world.append(_local_to_world(prim.x, prim.y, body_world_pos,
+                                             body_size, cos_b, sin_b))
+            all_world.append(_local_to_world(prim.x2, prim.y2, body_world_pos,
+                                             body_size, cos_b, sin_b))
+
+        elif prim.type == DrawPrimitiveType.POLYGON:
+            if prim.vertices and len(prim.vertices) >= 3:
+                for vx, vy in prim.vertices:
+                    all_world.append(_local_to_world(vx, vy, body_world_pos,
+                                                     body_size, cos_b, sin_b))
+
+        elif prim.type == DrawPrimitiveType.TEXT:
+            all_world.append(_local_to_world(prim.x, prim.y, body_world_pos,
+                                             body_size, cos_b, sin_b))
+
+        count = len(all_world) - start
+        if count > 0:
+            prim_ranges.append((start, count, prim))
+
+    if not all_world:
+        return
+
+    # Phase 2: Single batch world→screen conversion
+    all_screen = world_to_screen_batch_fn(all_world)
+
+    # Phase 3: Draw each primitive using its screen points
+    for start, count, prim in prim_ranges:
+        color = _ensure_rgba(prim.color)
         alpha = color[3]
         rgb = color[:3]
+        pts = all_screen[start:start + count]
 
-        # Batch filled circles (>1 element)
-        if ptype == DrawPrimitiveType.CIRCLE and filled and len(group) > 1:
-            circles = []
-            for p in group:
-                screen_pos = _transform_local_point(p.x, p.y, center, scale, cos_a, sin_a)
-                screen_radius = max(1, int(p.radius * scale))
-                circles.append((screen_pos, screen_radius))
+        if prim.type == DrawPrimitiveType.CIRCLE:
+            _draw_polygon_filled_or_outline(renderer, pts, rgb, alpha,
+                                            prim.filled, prim.thickness)
 
-            renderer.draw_circles_batch(circles, rgb, alpha)
-            if thickness > 0:
-                renderer.draw_circles_batch(circles, (0, 0, 0), alpha, border=thickness)
+        elif prim.type == DrawPrimitiveType.BOX:
+            _draw_polygon_filled_or_outline(renderer, pts, rgb, alpha,
+                                            prim.filled, prim.thickness)
 
-        # Batch lines (>1 element)
-        elif ptype == DrawPrimitiveType.LINE and len(group) > 1:
-            lines = []
-            line_thickness = thickness if thickness > 0 else 2
-            for p in group:
-                s = _transform_local_point(p.x, p.y, center, scale, cos_a, sin_a)
-                e = _transform_local_point(p.x2, p.y2, center, scale, cos_a, sin_a)
-                lines.append((s, e))
-            renderer.draw_lines_batch(lines, rgb, alpha, line_thickness)
-
-        # Non-batchable or single-element: fall through to individual draws
-        else:
-            for p in group:
-                _draw_single_primitive(renderer, p, center, scale, cos_a, sin_a, angle)
-
-
-def _transform_local_point(lx: float, ly: float,
-                           center: Tuple[int, int],
-                           scale: int,
-                           cos_a: float, sin_a: float) -> Tuple[int, int]:
-    """Transform a body-local point to screen coordinates."""
-    px = lx * scale
-    py = ly * scale
-    sx = center[0] + int(px * cos_a - py * sin_a)
-    sy = center[1] + int(px * sin_a + py * cos_a)
-    return (sx, sy)
-
-
-def _draw_single_primitive(renderer: Renderer,
-                           prim: DrawPrimitive,
-                           center: Tuple[int, int],
-                           scale: int,
-                           cos_a: float, sin_a: float,
-                           body_angle: Optional[float]) -> None:
-    """
-    Draw one primitive of a compound shape, applying body transform.
-
-    Args:
-        renderer: Renderer instance
-        prim: The primitive to draw
-        center: Body screen position
-        scale: Pixels per local unit
-        cos_a, sin_a: Precomputed body rotation
-        body_angle: Body orientation in screen radians (for combining with local angles)
-    """
-    color = _ensure_rgba(prim.color)
-    alpha = color[3]
-    rgb = color[:3]
-
-    if prim.type == DrawPrimitiveType.CIRCLE:
-        screen_pos = _transform_local_point(prim.x, prim.y, center, scale, cos_a, sin_a)
-        screen_radius = max(1, int(prim.radius * scale))
-
-        if prim.filled:
-            renderer.draw_circle(screen_pos, screen_radius, rgb, alpha=alpha)
-            if prim.thickness > 0:
-                renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0),
-                                     alpha=alpha, border=prim.thickness)
-        else:
+        elif prim.type in (DrawPrimitiveType.LINE, DrawPrimitiveType.ARROW):
             thickness = prim.thickness if prim.thickness > 0 else 2
-            renderer.draw_circle(screen_pos, screen_radius, rgb,
-                                 alpha=alpha, border=thickness)
-
-    elif prim.type == DrawPrimitiveType.BOX:
-        screen_pos = _transform_local_point(prim.x, prim.y, center, scale, cos_a, sin_a)
-        hw = max(1, int(prim.width * scale * 0.5))
-        hh = max(1, int(prim.height * scale * 0.5))
-
-        # Combine body angle with local angle
-        combined_angle = (body_angle or 0.0) + prim.angle
-
-        cos_c = math.cos(combined_angle)
-        sin_c = math.sin(combined_angle)
-        corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
-        points = []
-        for bx, by in corners:
-            rx = bx * cos_c - by * sin_c
-            ry = bx * sin_c + by * cos_c
-            points.append((screen_pos[0] + int(rx), screen_pos[1] + int(ry)))
-
-        if prim.filled:
-            if alpha < 255:
-                renderer.draw_polygon(points, rgb, alpha)
-                if prim.thickness > 0:
-                    renderer.draw_polygon(points, (0, 0, 0), alpha, prim.thickness)
+            if prim.type == DrawPrimitiveType.LINE:
+                renderer.draw_line(pts[0], pts[1], rgb, alpha, thickness)
             else:
-                renderer.draw_polygon(points, rgb)
-                if prim.thickness > 0:
-                    renderer.draw_polygon(points, (0, 0, 0), border=prim.thickness)
-        else:
-            thickness = prim.thickness if prim.thickness > 0 else 2
-            if alpha < 255:
-                renderer.draw_polygon(points, rgb, alpha, thickness)
-            else:
-                renderer.draw_polygon(points, rgb, border=thickness)
+                draw_orientation_arrow(renderer, pts[0], pts[1], color, thickness)
 
-    elif prim.type in (DrawPrimitiveType.LINE, DrawPrimitiveType.ARROW):
-        screen_start = _transform_local_point(prim.x, prim.y, center, scale, cos_a, sin_a)
-        screen_end = _transform_local_point(prim.x2, prim.y2, center, scale, cos_a, sin_a)
-        thickness = prim.thickness if prim.thickness > 0 else 2
+        elif prim.type == DrawPrimitiveType.POLYGON:
+            if count >= 3:
+                _draw_polygon_filled_or_outline(renderer, pts, rgb, alpha,
+                                                prim.filled, prim.thickness)
 
-        if prim.type == DrawPrimitiveType.LINE:
-            renderer.draw_line(screen_start, screen_end, rgb, alpha, thickness)
-        else:
-            # ARROW: reuse draw_orientation_arrow
-            draw_orientation_arrow(renderer, screen_start, screen_end, color, thickness)
-
-    elif prim.type == DrawPrimitiveType.POLYGON:
-        if not prim.vertices or len(prim.vertices) < 3:
-            return
-        points = [_transform_local_point(vx, vy, center, scale, cos_a, sin_a)
-                  for vx, vy in prim.vertices]
-
-        if prim.filled:
-            if alpha < 255:
-                renderer.draw_polygon(points, rgb, alpha)
-                if prim.thickness > 0:
-                    renderer.draw_polygon(points, (0, 0, 0), alpha, prim.thickness)
-            else:
-                renderer.draw_polygon(points, rgb)
-                if prim.thickness > 0:
-                    renderer.draw_polygon(points, (0, 0, 0), border=prim.thickness)
-        else:
-            thickness = prim.thickness if prim.thickness > 0 else 2
-            if alpha < 255:
-                renderer.draw_polygon(points, rgb, alpha, thickness)
-            else:
-                renderer.draw_polygon(points, rgb, border=thickness)
-
-    elif prim.type == DrawPrimitiveType.TEXT:
-        screen_pos = _transform_local_point(prim.x, prim.y, center, scale, cos_a, sin_a)
-        renderer.draw_text(prim.text, screen_pos, rgb, prim.font_size, (0, 0, 0))
+        elif prim.type == DrawPrimitiveType.TEXT:
+            renderer.draw_text(prim.text, pts[0], rgb, prim.font_size, (0, 0, 0))
