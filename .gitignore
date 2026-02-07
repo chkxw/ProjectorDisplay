@@ -8,6 +8,9 @@ _bmad-worktree/
 .codex
 .gemini
 
+# Generated documentation (tracked in bmad branch via worktree)
+docs
+
 # Reference code (symlink to external repo)
 _reference
 
