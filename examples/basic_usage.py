@@ -20,9 +20,6 @@ import time
 import math
 from projector_display import DisplayClient
 
-# Screen layout — adjust if your display resolution differs
-SW, SH = 1920, 1080
-CX, CY = SW // 2, SH // 2
 F = "screen"
 
 
@@ -37,6 +34,11 @@ def main():
         if not client.is_connected:
             print("Failed to connect to display server")
             return
+
+        # Derive screen center from calibration
+        lp = client.get_field("screen")["field"]["local_points"]
+        CX = (min(p[0] for p in lp) + max(p[0] for p in lp)) / 2
+        CY = (min(p[1] for p in lp) + max(p[1] for p in lp)) / 2
 
         print("Connected!")
 

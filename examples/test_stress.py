@@ -21,15 +21,16 @@ HOST = sys.argv[1] if len(sys.argv) > 1 else "localhost"
 COUNT = int(sys.argv[2]) if len(sys.argv) > 2 else 20
 PORT = 9999
 
-# Screen layout
-SW, SH = 1920, 1080
-CX, CY = SW // 2, SH // 2
 F = "screen"
 
 
 def main():
     client = DisplayClient(HOST, PORT)
     client.connect()
+
+    lp = client.get_field("screen")["field"]["local_points"]
+    CX = (min(p[0] for p in lp) + max(p[0] for p in lp)) / 2
+    CY = (min(p[1] for p in lp) + max(p[1] for p in lp)) / 2
 
     print(f"Creating {COUNT} rigid bodies with trajectories...")
     names = []
