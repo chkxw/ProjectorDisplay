@@ -235,8 +235,9 @@ class Scene:
                 return False
             if mocap_name is not None:
                 rb.mocap_name = mocap_name
-            if auto_track is not None:
+            if auto_track is not None and auto_track != rb.auto_track:
                 rb.auto_track = auto_track
+                rb.clear_history()
             return True
 
     def set_tracking_lost(self, name: str, lost: bool) -> bool:
