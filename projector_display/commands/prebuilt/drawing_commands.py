@@ -29,7 +29,7 @@ def _parse_color_param(color, default=(255, 255, 255, 255)):
 def draw_circle(scene, id: str, x: float, y: float, radius: float,
                 color=None, field: str = "base",
                 filled: bool = True, thickness: int = 0,
-                z_order: int = 0, segments: int = 32) -> dict:
+                z_order: int = 0, segments: int = 0) -> dict:
     """
     Draw a persistent circle overlay.
 
@@ -44,7 +44,7 @@ def draw_circle(scene, id: str, x: float, y: float, radius: float,
         filled: Whether to fill (default True)
         thickness: Outline thickness in pixels (used when filled=False)
         z_order: Render order (lower = behind, default 0)
-        segments: Number of polygon segments for circle approximation (default 32)
+        segments: Polygon segments for circle approximation (0 = auto based on size, default 0)
 
     Returns:
         Response with status and id

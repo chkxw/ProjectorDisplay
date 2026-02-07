@@ -795,9 +795,21 @@ class ProjectorDisplayServer:
 
         # Phase 1: shape-specific expansion to field-space vertices
         if prim.type == DrawPrimitiveType.CIRCLE:
-            segments = prim.circle_segments
             r = prim.radius
             cx, cy = prim.x, prim.y
+
+            segments = prim.circle_segments
+            if segments <= 0:
+                # Auto: determine from world-space radius
+                if drawing.field != "base" and drawing.field in fc.fields:
+                    world_edge = fc.convert([cx + r, cy], drawing.field, "base")
+                    world_r = math.hypot(world_edge[0] - drawing.world_x,
+                                         world_edge[1] - drawing.world_y)
+                else:
+                    world_r = r
+                # ~4 segments at ≤1cm, ~32 at ≥16cm
+                segments = max(4, min(32, round(world_r * 200)))
+
             if segments == 32:
                 unit = _UNIT_CIRCLE_32
             else:

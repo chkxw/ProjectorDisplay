@@ -66,7 +66,7 @@ class DrawPrimitive:
     vertices: Optional[List[Tuple[float, float]]] = None
 
     # CIRCLE polygon approximation
-    circle_segments: int = 32  # Number of polygon segments for circle approximation
+    circle_segments: int = 0  # 0 = auto (server chooses based on world-space radius), >0 = explicit
 
     # TEXT
     text: str = ""
@@ -91,7 +91,7 @@ class DrawPrimitive:
             data['x'] = self.x
             data['y'] = self.y
             data['radius'] = self.radius
-            if self.circle_segments != 32:
+            if self.circle_segments != 0:
                 data['circle_segments'] = self.circle_segments
 
         elif self.type == DrawPrimitiveType.BOX:
@@ -136,7 +136,7 @@ class DrawPrimitive:
             height=data.get('height', 0.1),
             angle=data.get('angle', 0.0),
             vertices=[tuple(v) for v in data['vertices']] if data.get('vertices') else None,
-            circle_segments=data.get('circle_segments', 32),
+            circle_segments=data.get('circle_segments', 0),
             text=data.get('text', ''),
             font_size=data.get('font_size', 24),
             color=parse_color(data.get('color', [255, 255, 255, 255])),
