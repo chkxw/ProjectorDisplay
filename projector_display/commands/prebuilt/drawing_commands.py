@@ -5,8 +5,6 @@ Commands for creating and managing persistent drawing overlays.
 Drawings are positioned in field coordinates (converted to world at creation).
 """
 
-import math
-
 from projector_display.commands.base import register_command
 from projector_display.core.draw_primitive import DrawPrimitive, DrawPrimitiveType, Drawing
 from projector_display.utils.color import parse_color
@@ -40,7 +38,7 @@ def draw_circle(scene, id: str, x: float, y: float, radius: float,
         id: Unique identifier (replaces existing drawing with same id)
         x: X position in field coordinates
         y: Y position in field coordinates
-        radius: Radius in meters
+        radius: Radius in field coordinate units (meters when field="base")
         color: RGBA color (default white)
         field: Coordinate field (default "base" = world coords)
         filled: Whether to fill (default True)
@@ -52,26 +50,17 @@ def draw_circle(scene, id: str, x: float, y: float, radius: float,
         Response with status and id
     """
     world_cx, world_cy = _to_world(scene, x, y, field)
-
-    # Compute world-space polygon vertices (circle → N-gon)
-    world_verts = []
-    for i in range(segments):
-        theta = 2 * math.pi * i / segments
-        wx = world_cx + radius * math.cos(theta)
-        wy = world_cy + radius * math.sin(theta)
-        world_verts.append((wx, wy))
-
     prim = DrawPrimitive(
         type=DrawPrimitiveType.CIRCLE,
+        x=x, y=y,
         radius=radius,
         circle_segments=segments,
-        vertices=world_verts,
         color=_parse_color_param(color),
         filled=filled,
         thickness=thickness,
     )
     drawing = Drawing(id=id, primitive=prim, world_x=world_cx, world_y=world_cy,
-                      z_order=z_order)
+                      field=field, z_order=z_order)
     scene.add_drawing(drawing)
     result = {"status": "success", "id": id}
     if z_order != 0:
@@ -93,8 +82,8 @@ def draw_box(scene, id: str, x: float, y: float,
         id: Unique identifier
         x: Center X in field coordinates
         y: Center Y in field coordinates
-        width: Width in meters
-        height: Height in meters
+        width: Width in field coordinate units (meters when field="base")
+        height: Height in field coordinate units (meters when field="base")
         color: RGBA color (default white)
         field: Coordinate field (default "base")
         filled: Whether to fill (default True)
@@ -106,38 +95,19 @@ def draw_box(scene, id: str, x: float, y: float,
         Response with status and id
     """
     world_cx, world_cy = _to_world(scene, x, y, field)
-
-    # Transform angle from field to world (always, even when angle=0)
-    if field != "base" and field in scene.field_calibrator.fields:
-        world_angle = scene.field_calibrator.transform_orientation(
-            field, "base", (x, y), angle, probe_distance=10.0,
-        )
-    else:
-        world_angle = angle
-
-    # Compute 4 world-space corners (width/height are in meters)
-    hw, hh = width / 2.0, height / 2.0
-    cos_a = math.cos(world_angle)
-    sin_a = math.sin(world_angle)
-    world_verts = []
-    for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]:
-        wx = world_cx + lx * cos_a - ly * sin_a
-        wy = world_cy + lx * sin_a + ly * cos_a
-        world_verts.append((wx, wy))
-
     prim = DrawPrimitive(
         type=DrawPrimitiveType.BOX,
+        x=x, y=y,
         width=width,
         height=height,
-        angle=angle,        # keep original for serialization/debugging
-        vertices=world_verts,
+        angle=angle,
         color=_parse_color_param(color),
         filled=filled,
         thickness=thickness,
     )
     drawing = Drawing(id=id, primitive=prim,
                       world_x=world_cx, world_y=world_cy,
-                      z_order=z_order)
+                      field=field, z_order=z_order)
     scene.add_drawing(drawing)
     result = {"status": "success", "id": id}
     if z_order != 0:
@@ -247,24 +217,18 @@ def draw_polygon(scene, id: str, vertices: list,
     if not vertices or len(vertices) < 3:
         return {"status": "error", "message": "Polygon requires at least 3 vertices"}
 
-    # Convert all vertices to world coordinates
-    world_verts = []
-    for v in vertices:
-        wx, wy = _to_world(scene, v[0], v[1], field)
-        world_verts.append((wx, wy))
-
-    # Anchor at first vertex
-    anchor_x, anchor_y = world_verts[0]
+    field_pts = [(float(v[0]), float(v[1])) for v in vertices]
+    anchor_x, anchor_y = _to_world(scene, field_pts[0][0], field_pts[0][1], field)
 
     prim = DrawPrimitive(
         type=DrawPrimitiveType.POLYGON,
-        vertices=world_verts,
+        vertices=field_pts,
         color=_parse_color_param(color),
         filled=filled,
         thickness=thickness,
     )
     drawing = Drawing(id=id, primitive=prim, world_x=anchor_x, world_y=anchor_y,
-                      z_order=z_order)
+                      field=field, z_order=z_order)
     scene.add_drawing(drawing)
     result = {"status": "success", "id": id}
     if z_order != 0:

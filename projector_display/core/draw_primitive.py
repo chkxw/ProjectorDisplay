@@ -33,8 +33,8 @@ class DrawPrimitive:
     Coordinate semantics depend on context:
       - Compound body: (x, y) relative to body center, +x = orientation direction.
         Scaled by style.size (local units -> meters).
-      - Direct drawing: coordinates are in meters (world space, converted from
-        field coords at creation time). Position stored in Drawing wrapper.
+      - Direct drawing: (x, y) are field-space center for CIRCLE/BOX.
+        The Drawing wrapper stores field name and world anchor position.
 
     Not all fields are used by every type:
       CIRCLE: x, y (center offset), radius
@@ -93,8 +93,6 @@ class DrawPrimitive:
             data['radius'] = self.radius
             if self.circle_segments != 32:
                 data['circle_segments'] = self.circle_segments
-            if self.vertices:
-                data['vertices'] = [list(v) for v in self.vertices]
 
         elif self.type == DrawPrimitiveType.BOX:
             data['x'] = self.x
@@ -102,8 +100,6 @@ class DrawPrimitive:
             data['width'] = self.width
             data['height'] = self.height
             data['angle'] = self.angle
-            if self.vertices:
-                data['vertices'] = [list(v) for v in self.vertices]
 
         elif self.type in (DrawPrimitiveType.LINE, DrawPrimitiveType.ARROW):
             data['x'] = self.x
@@ -165,6 +161,7 @@ class Drawing:
     # LINE/ARROW second endpoint in world coordinates
     world_x2: float = 0.0
     world_y2: float = 0.0
+    field: str = "base"  # Source coordinate field (for server-side vertex expansion)
     z_order: int = 0  # Render order: lower = behind, higher = in front
     _z_seq: int = dataclass_field(default=0, repr=False)  # Monotonic creation sequence for stable sort
 
@@ -178,6 +175,8 @@ class Drawing:
             'world_x2': self.world_x2,
             'world_y2': self.world_y2,
         }
+        if self.field != "base":
+            data['field'] = self.field
         if self.z_order != 0:
             data['z_order'] = self.z_order
         return data
@@ -192,5 +191,6 @@ class Drawing:
             world_y=data.get('world_y', 0.0),
             world_x2=data.get('world_x2', 0.0),
             world_y2=data.get('world_y2', 0.0),
+            field=data.get('field', 'base'),
             z_order=data.get('z_order', 0),
         )

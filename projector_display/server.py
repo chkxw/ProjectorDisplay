@@ -49,6 +49,10 @@ DEFAULT_SOCKET_HOST = "0.0.0.0"
 DEFAULT_UPDATE_RATE = 30  # Hz
 DEFAULT_BACKGROUND_COLOR = (0, 0, 0)  # Black
 
+# Precomputed unit circle vertices for 32-segment circle approximation
+_UNIT_CIRCLE_32 = [(math.cos(2 * math.pi * i / 32),
+                    math.sin(2 * math.pi * i / 32)) for i in range(32)]
+
 
 class _TimingFC:
     """Wraps FieldCalibrator to accumulate per-method transform timing."""
@@ -728,12 +732,18 @@ class ProjectorDisplayServer:
             else:
                 screen_orientation = effective_orientation
 
-        # Get label offset in pixels (ADR-12: signed distance scaling)
+        # Get label offset in pixels by converting the offset point in world space
+        # (correct under perspective — avoids per-axis scaling artifacts)
         lo = rb.style.label_offset
-        label_offset_pixels = (
-            int(math.copysign(fc.world_scale(display_pos, abs(lo[0])), lo[0])) if lo[0] else 0,
-            int(math.copysign(fc.world_scale(display_pos, abs(lo[1])), lo[1])) if lo[1] else 0,
-        )
+        if lo[0] or lo[1]:
+            label_screen = self.world_to_screen(
+                display_pos[0] + lo[0], display_pos[1] + lo[1])
+            label_offset_pixels = (
+                label_screen[0] - screen_pos[0],
+                label_screen[1] - screen_pos[1],
+            )
+        else:
+            label_offset_pixels = (0, 0)
 
         # Draw trajectory first (behind rigid body)
         if rb.trajectory_style.enabled:
@@ -775,58 +785,73 @@ class ProjectorDisplayServer:
             else:
                 self.renderer.draw_polygon(points, rgb, border=thickness)
 
+    def _render_polygon_drawing(self, drawing, prim, rgb, alpha):
+        """Render a polygon-based drawing (CIRCLE, BOX, POLYGON).
+
+        Phase 1: Expand compact shape -> field-space vertices
+        Phase 2: field -> world (H1 if needed) -> screen (H2) -> draw
+        """
+        fc = self.scene.field_calibrator
+
+        # Phase 1: shape-specific expansion to field-space vertices
+        if prim.type == DrawPrimitiveType.CIRCLE:
+            segments = prim.circle_segments
+            r = prim.radius
+            # Use prim center; fall back to drawing world anchor for old data
+            cx, cy = prim.x, prim.y
+            if cx == 0.0 and cy == 0.0 and drawing.field == "base":
+                cx, cy = drawing.world_x, drawing.world_y
+            if segments == 32:
+                unit = _UNIT_CIRCLE_32
+            else:
+                unit = [(math.cos(2 * math.pi * i / segments),
+                         math.sin(2 * math.pi * i / segments)) for i in range(segments)]
+            field_verts = [(cx + r * ux, cy + r * uy) for ux, uy in unit]
+
+        elif prim.type == DrawPrimitiveType.BOX:
+            hw, hh = prim.width / 2.0, prim.height / 2.0
+            cos_a, sin_a = math.cos(prim.angle), math.sin(prim.angle)
+            # Use prim center; fall back to drawing world anchor for old data
+            cx, cy = prim.x, prim.y
+            if cx == 0.0 and cy == 0.0 and drawing.field == "base":
+                cx, cy = drawing.world_x, drawing.world_y
+            field_verts = [
+                (cx + lx * cos_a - ly * sin_a, cy + lx * sin_a + ly * cos_a)
+                for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+            ]
+
+        elif prim.type == DrawPrimitiveType.POLYGON:
+            field_verts = prim.vertices  # already field-space
+
+        else:
+            return
+
+        if not field_verts or len(field_verts) < 3:
+            return
+
+        # Phase 2: shared coordinate pipeline
+        if drawing.field != "base" and drawing.field in fc.fields:
+            world_verts = fc.convert(field_verts, drawing.field, "base")
+        else:
+            world_verts = field_verts  # base field = world coords
+
+        screen_pts = self.batch_world_to_screen(world_verts)
+        self._draw_polygon_on_screen(screen_pts, rgb, alpha, prim.filled, prim.thickness)
+
     def _render_drawing(self, drawing):
         """Render a single persistent drawing overlay.
 
-        Converts world coordinates to screen and dispatches to renderer
-        based on primitive type.
+        Dispatches polygon-based types (CIRCLE, BOX, POLYGON) to the
+        two-phase pipeline; handles LINE/ARROW/TEXT directly.
         """
         prim = drawing.primitive
         color = prim.color
         alpha = color[3] if len(color) == 4 else 255
         rgb = color[:3]
 
-        # ADR-12: Position-aware size conversion for drawings
-        fc = self.scene.field_calibrator
-        if prim.type == DrawPrimitiveType.CIRCLE:
-            if prim.vertices and len(prim.vertices) >= 3:
-                # Vertex-transform pipeline (circle approximated as polygon)
-                points = self.batch_world_to_screen(prim.vertices)
-                self._draw_polygon_on_screen(points, rgb, alpha, prim.filled, prim.thickness)
-            else:
-                # Fallback for legacy data without precomputed vertices
-                screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
-                draw_world_pos = (drawing.world_x, drawing.world_y)
-                screen_radius = fc.world_scale(draw_world_pos, prim.radius)
-                if prim.filled:
-                    self.renderer.draw_circle(screen_pos, screen_radius, rgb, alpha=alpha)
-                    self.renderer.draw_circle(screen_pos, screen_radius, (0, 0, 0),
-                                              alpha=alpha, border=2)
-                else:
-                    thickness = prim.thickness if prim.thickness > 0 else 2
-                    self.renderer.draw_circle(screen_pos, screen_radius, rgb,
-                                              alpha=alpha, border=thickness)
-
-        elif prim.type == DrawPrimitiveType.BOX:
-            if prim.vertices and len(prim.vertices) >= 3:
-                # Unified vertex-transform pipeline (same as POLYGON)
-                points = self.batch_world_to_screen(prim.vertices)
-                self._draw_polygon_on_screen(points, rgb, alpha, prim.filled, prim.thickness)
-            else:
-                # Fallback for legacy/compound BOX without precomputed vertices
-                screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
-                draw_world_pos = (drawing.world_x, drawing.world_y)
-                hw = fc.world_scale(draw_world_pos, prim.width * 0.5)
-                hh = fc.world_scale(draw_world_pos, prim.height * 0.5)
-                cos_a = math.cos(prim.angle)
-                sin_a = math.sin(prim.angle)
-                corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
-                points = []
-                for bx, by in corners:
-                    rx = bx * cos_a - by * sin_a
-                    ry = bx * sin_a + by * cos_a
-                    points.append((screen_pos[0] + int(rx), screen_pos[1] + int(ry)))
-                self._draw_polygon_on_screen(points, rgb, alpha, prim.filled, prim.thickness)
+        if prim.type in (DrawPrimitiveType.CIRCLE, DrawPrimitiveType.BOX,
+                         DrawPrimitiveType.POLYGON):
+            self._render_polygon_drawing(drawing, prim, rgb, alpha)
 
         elif prim.type in (DrawPrimitiveType.LINE, DrawPrimitiveType.ARROW):
             screen_start = self.world_to_screen(drawing.world_x, drawing.world_y)
@@ -838,12 +863,6 @@ class ProjectorDisplayServer:
             else:
                 from projector_display.rendering.primitives import draw_orientation_arrow
                 draw_orientation_arrow(self.renderer, screen_start, screen_end, color, thickness)
-
-        elif prim.type == DrawPrimitiveType.POLYGON:
-            if prim.vertices and len(prim.vertices) >= 3:
-                # Vertices stored as absolute world coords
-                points = self.batch_world_to_screen(prim.vertices)
-                self._draw_polygon_on_screen(points, rgb, alpha, prim.filled, prim.thickness)
 
         elif prim.type == DrawPrimitiveType.TEXT:
             screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
