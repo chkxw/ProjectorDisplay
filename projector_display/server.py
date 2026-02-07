@@ -291,8 +291,7 @@ class ProjectorDisplayServer:
             with open(calib_file, 'r') as f:
                 calib_data = yaml.safe_load(f)
 
-            # Validate resolution matches current screen
-            # (will be validated after renderer init)
+            # Deferred: validated after renderer init (local_points vs display size)
             self._pending_calibration = calib_data
             self.logger.info(f"Calibration file loaded: {self.calibration_path}")
             return True
@@ -305,37 +304,38 @@ class ProjectorDisplayServer:
         """
         Apply new calibration at runtime.
 
-        Validates resolution and screen_field, clears all existing fields,
-        registers the new screen field, updates world bounds, and optionally
-        writes the calibration to disk.
+        Validates screen_field local_points fit within the display,
+        clears all existing fields, registers the new screen field,
+        updates world bounds, and optionally writes the calibration to disk.
 
         Args:
-            calib_data: Full calibration dict (resolution, screen_field)
+            calib_data: Calibration dict with screen_field (world_points, local_points)
             write_to_disk: Whether to write calibration to the YAML file
 
         Returns:
             Dict with world_bounds on success
 
         Raises:
-            ValueError: On resolution mismatch or missing fields
+            ValueError: On local_points out of display range or missing fields
         """
-        # 1. Validate resolution
-        res = calib_data.get('resolution', {})
-        w, h = res.get('width'), res.get('height')
-        if not w or not h:
-            raise ValueError("Missing resolution.width/height")
-        if w != self._screen_width or h != self._screen_height:
-            raise ValueError(
-                f"Resolution mismatch: got {w}x{h}, "
-                f"screen is {self._screen_width}x{self._screen_height}"
-            )
-
-        # 2. Validate screen_field
+        # 1. Validate screen_field
         sf = calib_data.get('screen_field', {})
         world_points = sf.get('world_points')
         local_points = sf.get('local_points')
         if not world_points or not local_points:
             raise ValueError("Missing screen_field.world_points/local_points")
+
+        # 2. Validate local_points fit within display pixel range
+        lp = np.array(local_points, dtype=np.float32)
+        lp_min_x, lp_min_y = float(lp[:, 0].min()), float(lp[:, 1].min())
+        lp_max_x, lp_max_y = float(lp[:, 0].max()), float(lp[:, 1].max())
+        if (lp_min_x < 0 or lp_min_y < 0
+                or lp_max_x > self._screen_width
+                or lp_max_y > self._screen_height):
+            raise ValueError(
+                f"local_points [{lp_min_x},{lp_min_y}]-[{lp_max_x},{lp_max_y}] "
+                f"exceed display bounds {self._screen_width}x{self._screen_height}"
+            )
 
         # 3. Register new screen field first (replaces existing atomically,
         #    so the render thread always sees a valid "screen" field)

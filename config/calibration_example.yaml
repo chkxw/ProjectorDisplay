@@ -12,13 +12,8 @@
 # - TR = Top-Right
 # - TL = Top-Left
 
-# Resolution of the display when this calibration was created
-# If current resolution doesn't match, server will reject the calibration
-resolution:
-  width: 1920
-  height: 1080
-
 # Screen field mapping
+# local_points must fit within the connected display's pixel range
 screen_field:
   # World coordinates of the projected area corners (in meters)
   # These are the physical positions in your lab/experiment space

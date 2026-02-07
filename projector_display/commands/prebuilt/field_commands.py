@@ -237,13 +237,13 @@ def set_calibration(scene, calibration: dict) -> dict:
     """
     Apply new calibration at runtime.
 
-    Accepts the full calibration structure (resolution, screen_field),
-    validates it, replaces the screen field, clears all user-defined fields,
-    and writes the updated calibration to disk.
+    Accepts the calibration structure (screen_field with world_points
+    and local_points), validates it, replaces the screen field, clears
+    all user-defined fields, and writes the updated calibration to disk.
 
     Args:
         scene: Scene instance
-        calibration: Full calibration dict with resolution and screen_field
+        calibration: Calibration dict with screen_field
 
     Returns:
         Response with status and world_bounds on success

@@ -320,11 +320,11 @@ class DisplayClient:
         """
         Apply new calibration at runtime.
 
-        Validates resolution, replaces the screen field, clears all
-        user-defined fields, and writes the calibration to disk.
+        Validates local_points fit within display, replaces the screen
+        field, clears all user-defined fields, and writes calibration to disk.
 
         Args:
-            calibration: Full calibration dict with resolution and screen_field
+            calibration: Calibration dict with screen_field
 
         Returns:
             Response with status and world_bounds on success
