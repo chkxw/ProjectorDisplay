@@ -797,10 +797,7 @@ class ProjectorDisplayServer:
         if prim.type == DrawPrimitiveType.CIRCLE:
             segments = prim.circle_segments
             r = prim.radius
-            # Use prim center; fall back to drawing world anchor for old data
             cx, cy = prim.x, prim.y
-            if cx == 0.0 and cy == 0.0 and drawing.field == "base":
-                cx, cy = drawing.world_x, drawing.world_y
             if segments == 32:
                 unit = _UNIT_CIRCLE_32
             else:
@@ -811,10 +808,7 @@ class ProjectorDisplayServer:
         elif prim.type == DrawPrimitiveType.BOX:
             hw, hh = prim.width / 2.0, prim.height / 2.0
             cos_a, sin_a = math.cos(prim.angle), math.sin(prim.angle)
-            # Use prim center; fall back to drawing world anchor for old data
             cx, cy = prim.x, prim.y
-            if cx == 0.0 and cy == 0.0 and drawing.field == "base":
-                cx, cy = drawing.world_x, drawing.world_y
             field_verts = [
                 (cx + lx * cos_a - ly * sin_a, cy + lx * sin_a + ly * cos_a)
                 for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
