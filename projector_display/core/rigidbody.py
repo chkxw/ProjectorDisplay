@@ -12,7 +12,7 @@ from enum import Enum
 import copy
 import time
 
-from projector_display.utils.color import normalize_color, parse_color
+from ..utils.color import normalize_color, parse_color
 
 
 class RigidBodyShape(Enum):
@@ -63,7 +63,7 @@ class RigidBodyStyle:
     @classmethod
     def from_dict(cls, data: dict) -> "RigidBodyStyle":
         """Create from dictionary. Accepts RGB, RGBA, hex strings (ADR-8)."""
-        from projector_display.core.draw_primitive import DrawPrimitive
+        from .draw_primitive import DrawPrimitive
 
         shape = data.get('shape', 'circle')
         if isinstance(shape, str):

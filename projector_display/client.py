@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 
-from projector_display.mocap import DEFAULT_NATNET_PORT
+from .mocap import DEFAULT_NATNET_PORT
 
 logger = logging.getLogger(__name__)
 

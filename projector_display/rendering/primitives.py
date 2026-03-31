@@ -11,9 +11,9 @@ ADR-8: All colors use RGBA format (4-tuple). RGB (3-tuple) is auto-converted.
 
 import math
 from typing import Tuple, List, Optional, Callable, Union
-from projector_display.rendering.renderer import Renderer
-from projector_display.core.rigidbody import RigidBody, RigidBodyShape
-from projector_display.core.draw_primitive import DrawPrimitive, DrawPrimitiveType
+from .renderer import Renderer
+from ..core.rigidbody import RigidBody, RigidBodyShape
+from ..core.draw_primitive import DrawPrimitive, DrawPrimitiveType
 
 # Type alias for RGBA color
 ColorRGBA = Tuple[int, int, int, int]

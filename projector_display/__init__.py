@@ -9,10 +9,10 @@ This package provides a scene-based display server where:
 - YAML and Commands are interconvertible
 """
 
-from projector_display.core.field_calibrator import FieldCalibrator, Field
-from projector_display.core.rigidbody import RigidBody, RigidBodyStyle, TrajectoryStyle
-from projector_display.core.scene import Scene
-from projector_display.client import DisplayClient
+from .core.field_calibrator import FieldCalibrator, Field
+from .core.rigidbody import RigidBody, RigidBodyStyle, TrajectoryStyle
+from .core.scene import Scene
+from .client import DisplayClient
 
 __version__ = "1.0.0"
 __all__ = [

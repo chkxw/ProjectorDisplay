@@ -6,8 +6,8 @@ All position commands must specify `field` parameter for coordinate interpretati
 """
 
 from typing import Optional, Dict, Any
-from projector_display.commands.base import register_command
-from projector_display.commands.prebuilt.mocap_commands import (
+from ..base import register_command
+from .mocap_commands import (
     _get_mocap_tracker, _require_mocap_enabled
 )
 

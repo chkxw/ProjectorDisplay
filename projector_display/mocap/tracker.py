@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from projector_display.core.scene import Scene
+    from ..core.scene import Scene
 
 logger = logging.getLogger(__name__)
 

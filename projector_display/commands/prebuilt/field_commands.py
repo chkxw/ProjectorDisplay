@@ -9,9 +9,9 @@ ADR-10: Includes background configuration commands for field backgrounds.
 
 import logging
 from typing import List, Optional
-from projector_display.commands.base import register_command
-from projector_display.storage import get_storage_manager
-from projector_display.utils.color import parse_color
+from ..base import register_command
+from ...storage import get_storage_manager
+from ...utils.color import parse_color
 
 logger = logging.getLogger(__name__)
 

@@ -4,8 +4,8 @@ Debug commands for projector display server.
 Commands for toggling debug visualization layers.
 """
 
-from projector_display.commands.base import register_command
-from projector_display.utils.color import parse_color
+from ..base import register_command
+from ...utils.color import parse_color
 
 
 @register_command

@@ -1,14 +1,14 @@
 """Rendering components for projector display."""
 
-from projector_display.rendering.renderer import Renderer, PygameRenderer
+from .renderer import Renderer, PygameRenderer
 
 try:
-    from projector_display.rendering.renderer import GLESRenderer
+    from .renderer import GLESRenderer
 except (ImportError, AttributeError):
     pass
-from projector_display.rendering.trajectory import draw_trajectory
-from projector_display.rendering.debug_layers import GridLayer, FieldLayer
-from projector_display.rendering.background import BackgroundRenderer
+from .trajectory import draw_trajectory
+from .debug_layers import GridLayer, FieldLayer
+from .background import BackgroundRenderer
 
 __all__ = [
     "Renderer",

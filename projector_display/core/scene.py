@@ -8,9 +8,9 @@ commands to clear and rebuild the scene.
 
 import threading
 from typing import Dict, Optional, List
-from projector_display.core.field_calibrator import FieldCalibrator, Field
-from projector_display.core.rigidbody import RigidBody, RigidBodyStyle, TrajectoryStyle
-from projector_display.core.draw_primitive import Drawing
+from .field_calibrator import FieldCalibrator, Field
+from .rigidbody import RigidBody, RigidBodyStyle, TrajectoryStyle
+from .draw_primitive import Drawing
 
 
 class Scene:
@@ -274,8 +274,8 @@ class Scene:
 
             # Update individual style attributes
             # TODO (F3): Add whitelist validation for production use
-            from projector_display.core.rigidbody import RigidBodyShape
-            from projector_display.utils.color import parse_color
+            from .rigidbody import RigidBodyShape
+            from ..utils.color import parse_color
 
             for key, value in style_params.items():
                 if hasattr(rb.style, key):
@@ -289,7 +289,7 @@ class Scene:
                     elif key == 'polygon_vertices' and value is not None:
                         value = [tuple(v) for v in value]
                     elif key == 'draw_list' and value is not None:
-                        from projector_display.core.draw_primitive import DrawPrimitive
+                        from .draw_primitive import DrawPrimitive
                         value = [DrawPrimitive.from_dict(p) if isinstance(p, dict) else p
                                  for p in value]
                     setattr(rb.style, key, value)
@@ -308,7 +308,7 @@ class Scene:
             if rb is None:
                 return False
 
-            from projector_display.utils.color import parse_color
+            from ..utils.color import parse_color
 
             # Update individual trajectory attributes
             for key, value in traj_params.items():

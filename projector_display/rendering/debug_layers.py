@@ -8,8 +8,8 @@ Two togglable overlay layers for on-demand debugging:
 
 import math
 from typing import Callable, Dict, Tuple, List
-from projector_display.rendering.renderer import Renderer
-from projector_display.core.field_calibrator import Field
+from .renderer import Renderer
+from ..core.field_calibrator import Field
 
 
 # Grid colors (RGBA, matching reference implementation)

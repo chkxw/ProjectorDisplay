@@ -15,8 +15,8 @@ from typing import Any, Dict, Tuple, Optional, Callable
 import cv2
 import numpy as np
 
-from projector_display.core.field_calibrator import Field
-from projector_display.storage import get_storage_manager
+from ..core.field_calibrator import Field
+from ..storage import get_storage_manager
 
 logger = logging.getLogger(__name__)
 

@@ -12,7 +12,7 @@ from typing import List, Tuple, Optional
 from dataclasses import dataclass, field as dataclass_field
 from enum import Enum
 
-from projector_display.utils.color import parse_color
+from ..utils.color import parse_color
 
 
 class DrawPrimitiveType(Enum):

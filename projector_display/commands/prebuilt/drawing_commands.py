@@ -5,9 +5,9 @@ Commands for creating and managing persistent drawing overlays.
 Drawings are positioned in field coordinates (converted to world at creation).
 """
 
-from projector_display.commands.base import register_command
-from projector_display.core.draw_primitive import DrawPrimitive, DrawPrimitiveType, Drawing
-from projector_display.utils.color import parse_color
+from ..base import register_command
+from ...core.draw_primitive import DrawPrimitive, DrawPrimitiveType, Drawing
+from ...utils.color import parse_color
 
 
 def _to_world(scene, x, y, field):

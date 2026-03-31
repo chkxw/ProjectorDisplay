@@ -25,7 +25,7 @@ import time
 import collections
 from typing import Dict, Optional
 
-from projector_display.utils.logging import get_logger
+from .logging import get_logger
 
 logger = get_logger(__name__)
 

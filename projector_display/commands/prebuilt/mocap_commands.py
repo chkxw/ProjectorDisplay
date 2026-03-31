@@ -8,8 +8,8 @@ MoCap is optional - commands return detailed errors when unavailable.
 import logging
 from typing import Optional
 
-from projector_display.commands.base import register_command
-from projector_display.mocap import DEFAULT_NATNET_PORT
+from ..base import register_command
+from ...mocap import DEFAULT_NATNET_PORT
 
 logger = logging.getLogger(__name__)
 

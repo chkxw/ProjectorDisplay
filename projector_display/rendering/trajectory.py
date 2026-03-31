@@ -9,8 +9,8 @@ ADR-8: All colors use RGBA format. Gradients support alpha fade (e.g., opaque to
 
 import math
 from typing import List, Tuple, Union, Callable
-from projector_display.rendering.renderer import Renderer
-from projector_display.core.rigidbody import TrajectoryStyle
+from .renderer import Renderer
+from ..core.rigidbody import TrajectoryStyle
 
 # Type alias for RGBA color
 ColorRGBA = Tuple[int, int, int, int]

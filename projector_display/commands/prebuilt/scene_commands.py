@@ -12,8 +12,8 @@ from typing import Dict, Any
 
 import yaml
 
-from projector_display.commands.base import register_command
-from projector_display.storage import get_storage_manager
+from ..base import register_command
+from ...storage import get_storage_manager
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ def load_scene(scene, scene_data: dict) -> dict:
             rb._last_orientation = rb_data['orientation']
 
     # Load drawings
-    from projector_display.core.draw_primitive import Drawing
+    from ...core.draw_primitive import Drawing
     for did, d_data in scene_data.get('drawings', {}).items():
         drawing = Drawing.from_dict(d_data)
         scene.add_drawing(drawing)
@@ -331,7 +331,7 @@ def load_scene_from_file(scene, name: str) -> dict:
                 rb._last_orientation = rb_data['orientation']
 
         # Load drawings
-        from projector_display.core.draw_primitive import Drawing
+        from ...core.draw_primitive import Drawing
         for did, d_data in scene_data.get('drawings', {}).items():
             drawing = Drawing.from_dict(d_data)
             scene.add_drawing(drawing)

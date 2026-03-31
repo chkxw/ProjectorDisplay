@@ -28,19 +28,19 @@ import yaml
 import numpy as np
 import pygame  # F18: Move import to top
 
-from projector_display.core.scene import Scene
-from projector_display.core.field_calibrator import FieldCalibrator
-from projector_display.rendering.renderer import Renderer, PygameRenderer
-from projector_display.rendering.primitives import draw_rigidbody
-from projector_display.rendering.trajectory import draw_trajectory
-from projector_display.core.draw_primitive import DrawPrimitiveType
-from projector_display.rendering.debug_layers import GridLayer, FieldLayer
-from projector_display.rendering.background import BackgroundRenderer
-from projector_display.commands import get_registry
-from projector_display.utils.logging import setup_logging, get_logger
-from projector_display.utils.profiler import FrameProfiler
-from projector_display.storage import init_storage_manager, get_storage_manager
-from projector_display.mocap import MocapTracker
+from .core.scene import Scene
+from .core.field_calibrator import FieldCalibrator
+from .rendering.renderer import Renderer, PygameRenderer
+from .rendering.primitives import draw_rigidbody
+from .rendering.trajectory import draw_trajectory
+from .core.draw_primitive import DrawPrimitiveType
+from .rendering.debug_layers import GridLayer, FieldLayer
+from .rendering.background import BackgroundRenderer
+from .commands import get_registry
+from .utils.logging import setup_logging, get_logger
+from .utils.profiler import FrameProfiler
+from .storage import init_storage_manager, get_storage_manager
+from .mocap import MocapTracker
 
 
 # Default configuration
@@ -402,7 +402,7 @@ class ProjectorDisplayServer:
         """
         try:
             if self.renderer_backend == "gles":
-                from projector_display.rendering.renderer.gles_renderer import GLESRenderer
+                from .rendering.renderer.gles_renderer import GLESRenderer
                 self.logger.info("Using GLES2 renderer")
                 self.renderer = GLESRenderer(fullscreen=self.fullscreen)
             else:
@@ -867,7 +867,7 @@ class ProjectorDisplayServer:
             if prim.type == DrawPrimitiveType.LINE:
                 self.renderer.draw_line(screen_start, screen_end, rgb, alpha, thickness)
             else:
-                from projector_display.rendering.primitives import draw_orientation_arrow
+                from .rendering.primitives import draw_orientation_arrow
                 draw_orientation_arrow(self.renderer, screen_start, screen_end, color, thickness)
 
         elif prim.type == DrawPrimitiveType.TEXT:

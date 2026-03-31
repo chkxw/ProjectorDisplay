@@ -8,7 +8,7 @@ from typing import Any, Tuple, List, Optional
 
 import pygame
 
-from projector_display.rendering.renderer.base import (
+from .base import (
     _get_sdl_version, _init_display_sdl2, _init_display_sdl1,
 )
 

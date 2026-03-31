@@ -6,13 +6,13 @@ to display functionality.
 """
 
 # Import all command modules to trigger registration
-from projector_display.commands.prebuilt import rigidbody_commands
-from projector_display.commands.prebuilt import field_commands
-from projector_display.commands.prebuilt import scene_commands
-from projector_display.commands.prebuilt import debug_commands
-from projector_display.commands.prebuilt import asset_commands
-from projector_display.commands.prebuilt import mocap_commands
-from projector_display.commands.prebuilt import drawing_commands
+from . import rigidbody_commands
+from . import field_commands
+from . import scene_commands
+from . import debug_commands
+from . import asset_commands
+from . import mocap_commands
+from . import drawing_commands
 
 __all__ = [
     "rigidbody_commands",

@@ -14,8 +14,8 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from projector_display.commands.base import register_command
-from projector_display.storage import get_storage_manager
+from ..base import register_command
+from ...storage import get_storage_manager
 
 logger = logging.getLogger(__name__)
 
