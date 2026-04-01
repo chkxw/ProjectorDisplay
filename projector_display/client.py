@@ -181,7 +181,8 @@ class DisplayClient:
 
     def create_rigidbody(self, name: str, style: dict = None,
                          trajectory: dict = None, mocap_name: str = None,
-                         auto_track: bool = False) -> Optional[Dict]:
+                         auto_track: bool = False,
+                         z_order: int = 0) -> Optional[Dict]:
         """
         Create a new rigid body.
 
@@ -191,6 +192,7 @@ class DisplayClient:
             trajectory: Optional trajectory configuration
             mocap_name: Optional MoCap system name
             auto_track: Enable auto-tracking from MoCap (requires MoCap enabled)
+            z_order: Render order (lower = behind, higher = in front)
 
         Returns:
             Response dictionary
@@ -204,6 +206,8 @@ class DisplayClient:
             cmd["mocap_name"] = mocap_name
         if auto_track:
             cmd["auto_track"] = auto_track
+        if z_order != 0:
+            cmd["z_order"] = z_order
         return self._send_command(cmd)
 
     def remove_rigidbody(self, name: str) -> Optional[Dict]:
