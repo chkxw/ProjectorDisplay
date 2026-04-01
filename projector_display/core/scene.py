@@ -338,7 +338,10 @@ class Scene:
         Returns:
             True if created successfully
         """
-        self.field_calibrator.register_field(name, world_points, local_points)
+        with self._lock:
+            self.field_calibrator = self.field_calibrator.with_registered_field(
+                name, world_points, local_points
+            )
         return True
 
     def remove_field(self, name: str) -> bool:
@@ -348,16 +351,11 @@ class Scene:
         Returns:
             True if removed, False if not found
         """
-        if name not in self.field_calibrator.fields:
-            return False
-        del self.field_calibrator.fields[name]
-        # Also remove from transform matrices
-        if name in self.field_calibrator.transform_matrix:
-            del self.field_calibrator.transform_matrix[name]
-        for field_name in self.field_calibrator.transform_matrix:
-            if name in self.field_calibrator.transform_matrix[field_name]:
-                del self.field_calibrator.transform_matrix[field_name][name]
-        return True
+        with self._lock:
+            if name not in self.field_calibrator.fields:
+                return False
+            self.field_calibrator = self.field_calibrator.without_field(name)
+            return True
 
     def list_fields(self) -> List[str]:
         """List all registered field names."""
@@ -394,15 +392,12 @@ class Scene:
             self._rigidbodies.clear()
             self._drawings.clear()
             self._z_counter = 0
-            # Keep screen field if it exists
-            screen_field = self.field_calibrator.fields.get("screen")
-            self.field_calibrator = FieldCalibrator()
-            if screen_field:
-                self.field_calibrator.register_field(
-                    "screen",
-                    screen_field.world_points,
-                    screen_field.local_points
-                )
+            self.field_calibrator = self.field_calibrator.keeping_only({"screen"})
+
+    def replace_field_calibrator(self, field_calibrator: FieldCalibrator) -> None:
+        """Atomically replace the published field calibrator snapshot."""
+        with self._lock:
+            self.field_calibrator = field_calibrator
 
     def to_dict(self) -> dict:
         """

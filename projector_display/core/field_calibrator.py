@@ -38,6 +38,18 @@ class Field:
         if not self._is_rectangle(self.local_points):
             raise ValueError("Local points must form a rectangle")
 
+    def copy(self) -> "Field":
+        """Return a detached field copy for a new calibrator snapshot."""
+        return Field(
+            name=self.name,
+            world_points=np.array(self.world_points, dtype=np.float32, copy=True),
+            local_points=np.array(self.local_points, dtype=np.float32, copy=True),
+            background_image=self.background_image,
+            background_color=(tuple(self.background_color)
+                              if self.background_color is not None else None),
+            background_alpha=self.background_alpha,
+        )
+
     def _is_rectangle(self, points: np.ndarray) -> bool:
         """Check if 4 points form a rectangle."""
         # Sort points by x then y to get consistent ordering
@@ -86,6 +98,76 @@ class FieldCalibrator:
         # Initialize base field transforms (identity for world coordinates)
         self.transform_matrix["base"] = {}
 
+    @classmethod
+    def from_fields(cls, fields: Dict[str, Field],
+                    ground_truth_name: Optional[str] = None) -> "FieldCalibrator":
+        """Build a fully initialized calibrator snapshot from field copies."""
+        calibrator = cls()
+        calibrator.fields = {
+            name: field.copy()
+            for name, field in fields.items()
+        }
+        if ground_truth_name in calibrator.fields:
+            calibrator.ground_truth_name = ground_truth_name
+        calibrator._rebuild_transform_matrix()
+        return calibrator
+
+    def copy(self) -> "FieldCalibrator":
+        """Return a detached calibrator snapshot."""
+        return self.from_fields(self.fields, self.ground_truth_name)
+
+    def with_registered_field(self, name: str, world_points: np.ndarray,
+                              local_points: np.ndarray,
+                              is_ground_truth: bool = False) -> "FieldCalibrator":
+        """Return a new calibrator snapshot with the field added or replaced."""
+        next_fields = {
+            existing_name: field.copy()
+            for existing_name, field in self.fields.items()
+        }
+        next_fields[name] = Field(
+            name=name,
+            world_points=np.array(world_points, dtype=np.float32),
+            local_points=np.array(local_points, dtype=np.float32),
+        )
+
+        next_ground_truth = self.ground_truth_name
+        if is_ground_truth:
+            next_ground_truth = name
+        elif next_ground_truth not in next_fields:
+            next_ground_truth = None
+
+        return self.from_fields(next_fields, next_ground_truth)
+
+    def without_field(self, name: str) -> "FieldCalibrator":
+        """Return a new calibrator snapshot without the specified field."""
+        if name not in self.fields:
+            return self
+
+        next_fields = {
+            existing_name: field.copy()
+            for existing_name, field in self.fields.items()
+            if existing_name != name
+        }
+        next_ground_truth = (
+            self.ground_truth_name
+            if self.ground_truth_name in next_fields else None
+        )
+        return self.from_fields(next_fields, next_ground_truth)
+
+    def keeping_only(self, field_names) -> "FieldCalibrator":
+        """Return a new calibrator snapshot containing only the selected fields."""
+        names = set(field_names)
+        next_fields = {
+            existing_name: field.copy()
+            for existing_name, field in self.fields.items()
+            if existing_name in names
+        }
+        next_ground_truth = (
+            self.ground_truth_name
+            if self.ground_truth_name in next_fields else None
+        )
+        return self.from_fields(next_fields, next_ground_truth)
+
     def register_field(self, name: str, world_points: np.ndarray,
                       local_points: np.ndarray, is_ground_truth: bool = False):
         """
@@ -97,16 +179,22 @@ class FieldCalibrator:
             local_points: 4x2 array of points forming a rectangle in local space
             is_ground_truth: Whether this field represents the ground truth coordinate system
         """
-        field = Field(name, np.array(world_points, dtype=np.float32),
-                     np.array(local_points, dtype=np.float32))
+        updated = self.with_registered_field(
+            name=name,
+            world_points=world_points,
+            local_points=local_points,
+            is_ground_truth=is_ground_truth,
+        )
+        # Publish only after all transforms are ready.
+        self.transform_matrix = updated.transform_matrix
+        self.ground_truth_name = updated.ground_truth_name
+        self.fields = updated.fields
 
-        self.fields[name] = field
-
-        if is_ground_truth:
-            self.ground_truth_name = name
-
-        # Update transformation matrix for all existing fields
-        self._update_transform_matrix(name)
+    def _rebuild_transform_matrix(self):
+        """Rebuild transforms from the current field snapshot."""
+        self.transform_matrix = {"base": {}}
+        for field_name in self.fields:
+            self._update_transform_matrix(field_name)
 
     def _update_transform_matrix(self, new_field_name: str):
         """Update the transformation matrix with conversions for the new field."""

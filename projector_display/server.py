@@ -22,7 +22,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import argparse
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Optional, Tuple, List, Callable
 
 import yaml
 import numpy as np
@@ -337,26 +337,15 @@ class ProjectorDisplayServer:
                 f"exceed display bounds {self._screen_width}x{self._screen_height}"
             )
 
-        # 3. Register new screen field first (replaces existing atomically,
-        #    so the render thread always sees a valid "screen" field)
-        fc = self.scene.field_calibrator
-        fc.register_field(
+        # 3. Build the next calibrator snapshot off-thread, then publish it.
+        next_fc = FieldCalibrator().with_registered_field(
             "screen",
             np.array(world_points, dtype=np.float32),
             np.array(local_points, dtype=np.float32)
         )
+        self.scene.replace_field_calibrator(next_fc)
 
-        # 4. Remove all non-screen fields individually (thread-safe:
-        #    "screen" and its transforms remain valid throughout)
-        non_screen = [name for name in fc.fields if name != "screen"]
-        for name in non_screen:
-            del fc.fields[name]
-            fc.transform_matrix.pop(name, None)
-            fc.transform_matrix["base"].pop(name, None)
-            if "screen" in fc.transform_matrix:
-                fc.transform_matrix["screen"].pop(name, None)
-
-        # 5. Update world bounds
+        # 4. Update world bounds
         world_pts = np.array(world_points)
         self._world_bounds = (
             float(world_pts[:, 0].min()),
@@ -365,7 +354,7 @@ class ProjectorDisplayServer:
             float(world_pts[:, 1].max())
         )
 
-        # 6. Write to calibration file if requested
+        # 5. Write to calibration file if requested
         if write_to_disk and self.calibration_path:
             with open(self.calibration_path, 'w') as f:
                 yaml.dump(calib_data, f, Dumper=_CalibrationDumper, sort_keys=False)
@@ -539,17 +528,24 @@ class ProjectorDisplayServer:
             self.logger.error(f"Command error: {e}")
             return {"status": "error", "message": str(e)}
 
-    def world_to_screen(self, x: float, y: float) -> Tuple[int, int]:
+    def world_to_screen(self, x: float, y: float,
+                        fc: Optional[FieldCalibrator] = None) -> Tuple[int, int]:
         """Convert world coordinates to screen coordinates."""
-        if "screen" not in self.scene.field_calibrator.fields:
+        return self._world_to_screen_with_fc(fc or self.scene.field_calibrator, x, y)
+
+    def _world_to_screen_with_fc(self, fc: FieldCalibrator,
+                                 x: float, y: float) -> Tuple[int, int]:
+        """Convert world coordinates using a specific calibrator snapshot."""
+        if "screen" not in fc.fields:
             # No calibration - return center of screen
             return (self._screen_width // 2, self._screen_height // 2)
 
-        screen_pos = self.scene.field_calibrator.convert([x, y], "base", "screen")
+        screen_pos = fc.convert([x, y], "base", "screen")
         # F17: Use round() instead of int() for better accuracy
         return (round(screen_pos[0]), round(screen_pos[1]))
 
-    def batch_world_to_screen(self, points) -> List[Tuple[int, int]]:
+    def batch_world_to_screen(self, points,
+                              fc: Optional[FieldCalibrator] = None) -> List[Tuple[int, int]]:
         """Convert multiple world coordinate points to screen coordinates in a single batch.
 
         Args:
@@ -558,12 +554,17 @@ class ProjectorDisplayServer:
         Returns:
             List of (int, int) screen coordinate tuples
         """
-        if "screen" not in self.scene.field_calibrator.fields:
+        return self._batch_world_to_screen_with_fc(fc or self.scene.field_calibrator, points)
+
+    def _batch_world_to_screen_with_fc(self, fc: FieldCalibrator,
+                                       points) -> List[Tuple[int, int]]:
+        """Convert world coordinate points using a specific calibrator snapshot."""
+        if "screen" not in fc.fields:
             center = (self._screen_width // 2, self._screen_height // 2)
             return [center] * len(points)
 
         pts_array = [[float(p[0]), float(p[1])] for p in points]
-        screen_pts = self.scene.field_calibrator.convert(pts_array, "base", "screen")
+        screen_pts = fc.convert(pts_array, "base", "screen")
         return [(round(float(sp[0])), round(float(sp[1]))) for sp in screen_pts]
 
     def render_frame(self):
@@ -582,17 +583,24 @@ class ProjectorDisplayServer:
         if p:
             p.mark("clear")
 
-        # Get fields snapshot for thread-safe iteration
-        fields_snapshot = self.scene.get_fields_snapshot()
+        # Capture one calibrator snapshot for the whole frame.
+        frame_fc = self.scene.field_calibrator
+        fields_snapshot = dict(frame_fc.fields)
 
         if p:
             p.mark("fields_snap")
+
+        fc = _TimingFC(frame_fc) if p else frame_fc
+        world_to_screen = lambda x, y, _fc=fc: self._world_to_screen_with_fc(_fc, x, y)
+        batch_world_to_screen = (
+            lambda points, _fc=fc: self._batch_world_to_screen_with_fc(_fc, points)
+        )
 
         # Render field backgrounds (ADR-10) - before everything else
         self.background_renderer.render_field_backgrounds(
             self.renderer,
             fields_snapshot,
-            self.world_to_screen
+            world_to_screen
         )
 
         if p:
@@ -604,10 +612,10 @@ class ProjectorDisplayServer:
             self.grid_layer.show_minor = self.scene.grid_show_minor
             self.grid_layer.major_color = self.scene.grid_major_color
             self.grid_layer.minor_color = self.scene.grid_minor_color
-            self.grid_layer.draw(self.renderer, self.world_to_screen, self._world_bounds)
+            self.grid_layer.draw(self.renderer, world_to_screen, self._world_bounds)
 
         if self.scene.field_layer_enabled:
-            self.field_layer.draw(self.renderer, fields_snapshot, self.world_to_screen)
+            self.field_layer.draw(self.renderer, fields_snapshot, world_to_screen)
 
         if p:
             p.mark("debug_layers")
@@ -618,16 +626,6 @@ class ProjectorDisplayServer:
 
         if p:
             p.mark("scene_snap")
-
-        # ADR-12: Position-aware size conversion
-        fc = self.scene.field_calibrator
-
-        # When profiling, wrap fc to accumulate transform timing
-        _tfc = None
-        if p:
-            _tfc = _TimingFC(fc)
-            self.scene.field_calibrator = _tfc
-            fc = _tfc
 
         # Collect all renderables for z-order sorted rendering
         renderables = []
@@ -649,10 +647,10 @@ class ProjectorDisplayServer:
             for _, _, item_type, item in renderables:
                 _t_item = time.perf_counter()
                 if item_type == 'rb':
-                    self._render_rigidbody(item, fc)
+                    self._render_rigidbody(item, fc, world_to_screen, batch_world_to_screen)
                     _n_bodies += 1
                 else:
-                    self._render_drawing(item)
+                    self._render_drawing(item, fc, world_to_screen, batch_world_to_screen)
                     _n_draws += 1
                 _dt = time.perf_counter() - _t_item
                 if item_type == 'rb':
@@ -660,9 +658,7 @@ class ProjectorDisplayServer:
                     _sum_body_t += _dt
             _t_render_total = time.perf_counter() - _t_render_start
 
-            # Restore original fc and record transform/draw split
-            self.scene.field_calibrator = _tfc._fc
-            _t_xform = _tfc.elapsed
+            _t_xform = fc.elapsed
             _t_draw = _t_render_total - _t_xform
             p.record("  xform", _t_xform)
             p.record("  draw", _t_draw)
@@ -675,9 +671,9 @@ class ProjectorDisplayServer:
                     f"RENDER: {_n_bodies}rb + {_n_draws}draw in "
                     f"{_t_render_total*1000:.1f}ms "
                     f"(xform={_t_xform*1000:.1f}ms "
-                    f"[convert={_tfc.t_convert*1000:.1f}ms×{_tfc.n_convert}, "
-                    f"world_scale={_tfc.t_world_scale*1000:.1f}ms×{_tfc.n_world_scale}, "
-                    f"orient={_tfc.t_orientation*1000:.1f}ms×{_tfc.n_orientation}], "
+                    f"[convert={fc.t_convert*1000:.1f}ms×{fc.n_convert}, "
+                    f"world_scale={fc.t_world_scale*1000:.1f}ms×{fc.n_world_scale}, "
+                    f"orient={fc.t_orientation*1000:.1f}ms×{fc.n_orientation}], "
                     f"draw={_t_draw*1000:.1f}ms, "
                     f"avg/body={_avg_body:.1f}ms, "
                     f"max/body={_max_body_t*1000:.1f}ms)"
@@ -685,9 +681,9 @@ class ProjectorDisplayServer:
         else:
             for _, _, item_type, item in renderables:
                 if item_type == 'rb':
-                    self._render_rigidbody(item, fc)
+                    self._render_rigidbody(item, fc, world_to_screen, batch_world_to_screen)
                 else:
-                    self._render_drawing(item)
+                    self._render_drawing(item, fc, world_to_screen, batch_world_to_screen)
 
         # Update display
         self.renderer.flip()
@@ -696,7 +692,9 @@ class ProjectorDisplayServer:
             p.mark("flip")
             p.end_frame()
 
-    def _render_rigidbody(self, rb, fc):
+    def _render_rigidbody(self, rb, fc,
+                          world_to_screen: Callable[[float, float], Tuple[int, int]],
+                          batch_world_to_screen: Callable) -> None:
         """Render a single rigid body with trajectory, shape, orientation, and label.
 
         Args:
@@ -705,7 +703,7 @@ class ProjectorDisplayServer:
         """
         display_pos = rb.get_display_position()
         # Convert position to screen coords
-        screen_pos = self.world_to_screen(display_pos[0], display_pos[1])
+        screen_pos = world_to_screen(display_pos[0], display_pos[1])
         screen_size = fc.world_scale(display_pos, rb.style.size)
 
         # Get screen orientation
@@ -717,8 +715,8 @@ class ProjectorDisplayServer:
             effective_orientation = rb.get_effective_orientation()
 
             # Transform orientation via two-point method
-            if "screen" in self.scene.field_calibrator.fields:
-                screen_orientation = self.scene.field_calibrator.transform_orientation(
+            if "screen" in fc.fields:
+                screen_orientation = fc.transform_orientation(
                     "base", "screen", display_pos, effective_orientation
                 )
 
@@ -728,7 +726,7 @@ class ProjectorDisplayServer:
                     display_pos[0] + math.cos(effective_orientation) * arrow_len_world,
                     display_pos[1] + math.sin(effective_orientation) * arrow_len_world
                 )
-                orientation_end = self.world_to_screen(world_end[0], world_end[1])
+                orientation_end = world_to_screen(world_end[0], world_end[1])
             else:
                 screen_orientation = effective_orientation
 
@@ -736,7 +734,7 @@ class ProjectorDisplayServer:
         # (correct under perspective — avoids per-axis scaling artifacts)
         lo = rb.style.label_offset
         if lo[0] or lo[1]:
-            label_screen = self.world_to_screen(
+            label_screen = world_to_screen(
                 display_pos[0] + lo[0], display_pos[1] + lo[1])
             label_offset_pixels = (
                 label_screen[0] - screen_pos[0],
@@ -749,7 +747,7 @@ class ProjectorDisplayServer:
         if rb.trajectory_style.enabled:
             trajectory_points = rb.get_trajectory_points()
             if len(trajectory_points) >= 2:
-                screen_traj = self.batch_world_to_screen(trajectory_points)
+                screen_traj = batch_world_to_screen(trajectory_points)
                 # ADR-12: Bind scale to rigid body position
                 scale_at_pos = lambda d, pos=display_pos: fc.world_scale(pos, d)
                 draw_trajectory(self.renderer, screen_traj, rb.trajectory_style,
@@ -764,7 +762,7 @@ class ProjectorDisplayServer:
                        body_world_pos=display_pos,
                        body_size=rb.style.size,
                        body_world_angle=effective_orientation,
-                       world_to_screen_batch_fn=self.batch_world_to_screen)
+                       world_to_screen_batch_fn=batch_world_to_screen)
 
     def _draw_polygon_on_screen(self, points, rgb, alpha, filled, thickness):
         """Draw a polygon with fill/outline handling.
@@ -785,14 +783,13 @@ class ProjectorDisplayServer:
             else:
                 self.renderer.draw_polygon(points, rgb, border=thickness)
 
-    def _render_polygon_drawing(self, drawing, prim, rgb, alpha):
+    def _render_polygon_drawing(self, drawing, prim, rgb, alpha, fc,
+                                batch_world_to_screen):
         """Render a polygon-based drawing (CIRCLE, BOX, POLYGON).
 
         Phase 1: Expand compact shape -> field-space vertices
         Phase 2: field -> world (H1 if needed) -> screen (H2) -> draw
         """
-        fc = self.scene.field_calibrator
-
         # Phase 1: shape-specific expansion to field-space vertices
         if prim.type == DrawPrimitiveType.CIRCLE:
             r = prim.radius
@@ -841,10 +838,12 @@ class ProjectorDisplayServer:
         else:
             world_verts = field_verts  # base field = world coords
 
-        screen_pts = self.batch_world_to_screen(world_verts)
+        screen_pts = batch_world_to_screen(world_verts)
         self._draw_polygon_on_screen(screen_pts, rgb, alpha, prim.filled, prim.thickness)
 
-    def _render_drawing(self, drawing):
+    def _render_drawing(self, drawing, fc,
+                        world_to_screen: Callable[[float, float], Tuple[int, int]],
+                        batch_world_to_screen) -> None:
         """Render a single persistent drawing overlay.
 
         Dispatches polygon-based types (CIRCLE, BOX, POLYGON) to the
@@ -857,11 +856,12 @@ class ProjectorDisplayServer:
 
         if prim.type in (DrawPrimitiveType.CIRCLE, DrawPrimitiveType.BOX,
                          DrawPrimitiveType.POLYGON):
-            self._render_polygon_drawing(drawing, prim, rgb, alpha)
+            self._render_polygon_drawing(drawing, prim, rgb, alpha, fc,
+                                         batch_world_to_screen)
 
         elif prim.type in (DrawPrimitiveType.LINE, DrawPrimitiveType.ARROW):
-            screen_start = self.world_to_screen(drawing.world_x, drawing.world_y)
-            screen_end = self.world_to_screen(drawing.world_x2, drawing.world_y2)
+            screen_start = world_to_screen(drawing.world_x, drawing.world_y)
+            screen_end = world_to_screen(drawing.world_x2, drawing.world_y2)
             thickness = prim.thickness if prim.thickness > 0 else 2
 
             if prim.type == DrawPrimitiveType.LINE:
@@ -871,7 +871,7 @@ class ProjectorDisplayServer:
                 draw_orientation_arrow(self.renderer, screen_start, screen_end, color, thickness)
 
         elif prim.type == DrawPrimitiveType.TEXT:
-            screen_pos = self.world_to_screen(drawing.world_x, drawing.world_y)
+            screen_pos = world_to_screen(drawing.world_x, drawing.world_y)
             self.renderer.draw_text(prim.text, screen_pos, rgb, prim.font_size, (0, 0, 0))
 
     def run(self):
