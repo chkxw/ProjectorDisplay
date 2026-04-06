@@ -145,6 +145,8 @@ def update_style(scene, name: str, **style_params) -> dict:
             - size: Size in meters
             - color: [R, G, B] (0-255)
             - alpha: Transparency (0-255)
+            - filled: bool - fill the shape (default True)
+            - thickness: Outline thickness in pixels when filled=False
             - label: bool - show label
             - label_offset: [x, y] offset in meters
             - orientation_length: Arrow length in meters

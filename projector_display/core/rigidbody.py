@@ -37,6 +37,8 @@ class RigidBodyStyle:
     shape: RigidBodyShape = RigidBodyShape.CIRCLE
     size: float = 0.1  # Size in meters
     color: Tuple[int, int, int, int] = (0, 0, 255, 255)  # RGBA (alpha in 4th component)
+    filled: bool = True  # Whether to fill the rigid body shape
+    thickness: int = 0  # Outline thickness in pixels when filled=False
     label: bool = True
     label_offset: Tuple[float, float] = (0, -0.2)  # Offset in meters
     orientation_length: float = 0.15  # Length of orientation arrow in meters
@@ -51,6 +53,8 @@ class RigidBodyStyle:
             'shape': self.shape.value,
             'size': self.size,
             'color': list(self.color),  # RGBA
+            'filled': self.filled,
+            'thickness': self.thickness,
             'label': self.label,
             'label_offset': list(self.label_offset),
             'orientation_length': self.orientation_length,
@@ -77,6 +81,8 @@ class RigidBodyStyle:
             shape=shape,
             size=data.get('size', 0.1),
             color=parse_color(data.get('color', [0, 0, 255])),
+            filled=data.get('filled', True),
+            thickness=data.get('thickness', 0),
             label=data.get('label', True),
             label_offset=tuple(data.get('label_offset', [0, -0.2])),
             orientation_length=data.get('orientation_length', 0.15),

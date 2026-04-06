@@ -137,7 +137,9 @@ def draw_rigidbody(renderer: Renderer,
             wy = body_world_pos[1] + body_size * math.sin(theta)
             world_verts.append((wx, wy))
         screen_pts = batch_fn(world_verts)
-        _draw_polygon_filled_or_outline(renderer, screen_pts, rgb, alpha, True, 0)
+        _draw_polygon_filled_or_outline(
+            renderer, screen_pts, rgb, alpha, style.filled, style.thickness
+        )
 
     elif style.shape == RigidBodyShape.BOX:
         # 4 world corners using body angle
@@ -150,7 +152,9 @@ def draw_rigidbody(renderer: Renderer,
             wy = body_world_pos[1] + sx * sin_b + sy * cos_b
             world_verts.append((wx, wy))
         screen_pts = batch_fn(world_verts)
-        _draw_polygon_filled_or_outline(renderer, screen_pts, rgb, alpha, True, 0)
+        _draw_polygon_filled_or_outline(
+            renderer, screen_pts, rgb, alpha, style.filled, style.thickness
+        )
 
     elif style.shape == RigidBodyShape.TRIANGLE:
         # 3 world vertices (pointing in orientation direction)
@@ -163,7 +167,9 @@ def draw_rigidbody(renderer: Renderer,
             wy = body_world_pos[1] + sx * sin_b + sy * cos_b
             world_verts.append((wx, wy))
         screen_pts = batch_fn(world_verts)
-        _draw_polygon_filled_or_outline(renderer, screen_pts, rgb, alpha, True, 0)
+        _draw_polygon_filled_or_outline(
+            renderer, screen_pts, rgb, alpha, style.filled, style.thickness
+        )
 
     elif style.shape == RigidBodyShape.POLYGON:
         if style.polygon_vertices and len(style.polygon_vertices) >= 3:
@@ -175,7 +181,9 @@ def draw_rigidbody(renderer: Renderer,
                 wy = body_world_pos[1] + sx * sin_b + sy * cos_b
                 world_verts.append((wx, wy))
             screen_pts = batch_fn(world_verts)
-            _draw_polygon_filled_or_outline(renderer, screen_pts, rgb, alpha, True, 0)
+            _draw_polygon_filled_or_outline(
+                renderer, screen_pts, rgb, alpha, style.filled, style.thickness
+            )
 
     elif style.shape == RigidBodyShape.COMPOUND:
         if style.draw_list:
